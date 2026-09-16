@@ -429,12 +429,13 @@ export async function runListener(
 ): Promise<void> {
   const configuration = await readListenerConfiguration(arguments_);
   const codexClient = new CodexAppServerClient(configuration.workingDirectory);
-  await codexClient.start();
-  console.log('Codex app-server ready.');
 
   const activeCalls = new Map<string, DirectVoiceCallLog>();
   const deviceTools = new DeviceToolBridge();
 
+  // Deliberate order: the port opens first, and only then does Codex start.
+  // Codex reaches back to this same port for the device controls, so starting
+  // it first means its very first attempt hits a closed port.
   const server = Bun.serve<DeviceSocketData>({
     hostname: configuration.hostname,
     port: configuration.port,
@@ -509,8 +510,11 @@ export async function runListener(
         console.log(
           `Voice offer ${offer.requestId}: ${offer.sdp.length} bytes of SDP, voice "${offer.voice ?? 'default'}".`,
         );
-        void codexClient
-          .startRealtimeSession(
+        // Codex takes about twenty seconds to come up, and the device can dial
+        // in before then. Waiting here turns a lost first call into a slow one.
+        void codexReady
+          .then(() =>
+            codexClient.startRealtimeSession(
             {
               type: 'realtime_offer',
               requestId: offer.requestId,
@@ -543,7 +547,7 @@ export async function runListener(
                 sendToDevice(socket, encodeServerToDeviceMessage(deviceMessage));
               }
             },
-          )
+          ))
           .then((result) => {
             call.noteAnswer(result.threadId);
             console.log(
@@ -597,6 +601,14 @@ export async function runListener(
   console.log(
     `Device controls for Codex on http://127.0.0.1:${server.port}${CONTROL_PATH}`,
   );
+
+  // Only now: the port above is open, so Codex's first reach for the device
+  // controls finds something listening. Handlers refer to this promise, and
+  // none of them can run before this line, because Bun.serve returns as soon
+  // as the port is bound and nothing else runs until this function yields.
+  const codexReady = codexClient.start();
+  await codexReady;
+  console.log('Codex app-server ready.');
 
   const stop = (): void => {
     server.stop(true);
