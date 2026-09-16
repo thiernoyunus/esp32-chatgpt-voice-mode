@@ -25,16 +25,36 @@ const CODEX_APP_SERVER_REALTIME_TIMEOUT_MILLISECONDS = 40_000;
 // Recent-chat picker size: the watch shows a short scrollable list, not a
 // full history browser.
 const RECENT_CHAT_LIST_SIZE = 10;
-const CODEX_APP_SERVER_SAFE_OVERRIDES = [
-  '-c',
-  'mcp_servers.palmier-pro.enabled=false',
-  '-c',
-  'mcp_servers.paste.enabled=false',
-  '-c',
-  'model="gpt-5.6-luna"',
-  '-c',
-  'model_reasoning_effort="low"',
-] as const;
+/**
+ * Settings handed to the Codex app-server at startup.
+ *
+ * Only one is universal: a voice call wants an answer quickly far more than it
+ * wants a thorough one, so reasoning effort is pinned low no matter what the
+ * user's own Codex config says.
+ *
+ * The other two are per-machine and default to nothing:
+ *
+ *   VOICEMODE_CODEX_MODEL        pin a model, e.g. gpt-5.6-luna. Left unset,
+ *                                Codex uses whatever the user configured.
+ *   VOICEMODE_CODEX_DISABLE_MCP  comma-separated MCP servers to switch off for
+ *                                calls only. Useful for ones that are slow to
+ *                                start, since every one of them delays the
+ *                                first call after a restart.
+ */
+function buildCodexOverrides(): string[] {
+  const overrides = ['-c', 'model_reasoning_effort="low"'];
+  const model = process.env.VOICEMODE_CODEX_MODEL;
+  if (model !== undefined && model.length > 0) {
+    overrides.push('-c', `model="${model}"`);
+  }
+  for (const name of (process.env.VOICEMODE_CODEX_DISABLE_MCP ?? '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)) {
+    overrides.push('-c', `mcp_servers.${name}.enabled=false`);
+  }
+  return overrides;
+}
 const CODEX_DEVELOPER_INSTRUCTION_LIST = [
   'You are the local Codex agent behind the voice device on this desk.',
   'Answer the user directly in clear English. Keep the spoken answer short and conversational; do not use Markdown.',
@@ -374,9 +394,7 @@ export class CodexAppServerClient {
       'app-server',
       '--listen',
       'stdio://',
-      ...(process.env.VOICEMODE_CODEX_USE_USER_MCP === '1'
-        ? []
-        : CODEX_APP_SERVER_SAFE_OVERRIDES),
+      ...buildCodexOverrides(),
     ];
     this.#process = spawn(codexExecutable, appServerArguments, {
       cwd: workingDirectory,

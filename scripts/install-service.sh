@@ -19,6 +19,17 @@ if [ -z "$BUN" ]; then
   exit 1
 fi
 
+# Machine-specific Codex settings are passed through from this shell rather
+# than committed, so nobody else inherits one person's model or plugin list.
+PASSTHROUGH=""
+for name in VOICEMODE_CODEX_MODEL VOICEMODE_CODEX_DISABLE_MCP VOICEMODE_CODEX_BIN; do
+  eval "value=\${$name:-}"
+  if [ -n "$value" ]; then
+    PASSTHROUGH="$PASSTHROUGH
+    <key>$name</key><string>$value</string>"
+  fi
+done
+
 mkdir -p "$HOME/Library/LaunchAgents"
 cat > "$PLIST" <<PLISTEOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -40,7 +51,7 @@ cat > "$PLIST" <<PLISTEOF
          audio on it. This asks the Codex app-server to say what its realtime
          module is doing, which is the only place that can tell "no audio was
          produced" apart from "audio was produced and never arrived". -->
-    <key>RUST_LOG</key><string>codex_core::realtime_conversation=trace,codex_realtime=trace</string>
+    <key>RUST_LOG</key><string>codex_core::realtime_conversation=trace,codex_realtime=trace</string>$PASSTHROUGH
   </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
@@ -52,7 +63,13 @@ cat > "$PLIST" <<PLISTEOF
 PLISTEOF
 
 plutil -lint "$PLIST" >/dev/null
+# bootout is not synchronous: bootstrapping while the old job is still on its
+# way out fails with a bare "Input/output error", so wait for it to go.
 launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  launchctl print "gui/$(id -u)/$LABEL" >/dev/null 2>&1 || break
+  sleep 1
+done
 launchctl bootstrap "gui/$(id -u)" "$PLIST"
 
 echo "Installed $LABEL"

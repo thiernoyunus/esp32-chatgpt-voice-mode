@@ -8,3 +8,13 @@
 # This is the only thing standing between your device connection and anything
 # else on your network, so do not reuse a password and do not commit it.
 DEVICE_SHARED_SECRET=replace-me
+
+# Optional, and not read from this file - these are passed to
+# ./scripts/install-service.sh when you install the background service:
+#
+#   VOICEMODE_CODEX_MODEL        pin a Codex model for calls
+#   VOICEMODE_CODEX_DISABLE_MCP  comma-separated MCP servers to switch off for
+#                                calls; useful for ones slow to start, since
+#                                each delays the first call after a restart
+#   VOICEMODE_CODEX_BIN          path to the codex binary, if it is not the one
+#                                inside ChatGPT.app

@@ -21,74 +21,19 @@ realtime service. This process sees signalling and captions and not one audio
 packet, which is worth knowing before you debug a silent call: nothing here can
 drop, delay, or repair the voice.
 
-## What you need
+## Setting it up
 
-- A Mac signed in to Codex, with the ChatGPT app installed (the Codex binary
-  ships inside it).
-- [Bun](https://bun.sh).
-- The device, flashed and pointed at this Mac.
+**[SETUP.md](SETUP.md)** is the whole path from nothing: the device, this Mac,
+the shared secret, the background service, and a check after every step. It is
+the only place those steps are written down, so they cannot drift out of sync
+with this page.
 
-## Running it
-
-```sh
-bun install
-bun run start
-```
-
-It reads `DEVICE_SHARED_SECRET` from `.dev.vars` and refuses any device that
-does not present it. Copy `.dev.vars.example` to `.dev.vars` and put your own
-secret in it — any long random string, as long as the device is flashed with
-the same one.
-
-Then point the device at this Mac. In the firmware checkout, in the gitignored
-`sdkconfig.defaults.local`:
-
-```
-CONFIG_VOICEMODE_URL="ws://<your-mac-lan-address>:8790"
-```
-
-Rebuild and flash. On boot the device asks this host for a firmware version;
-the answer is "nothing published", and it carries on. Firmware here is flashed
-over the cable, not over the air.
-
-### Give this Mac a fixed address
-
-The device dials one address, baked in at flash time. If your router hands this
-Mac a different address later, the device goes quiet until you rebuild and
-reflash it. A DHCP reservation in your router settings takes two minutes and
-removes the whole failure mode. Nothing in this software can work around it.
-
-## The device's own controls
-
-Volume, brightness and screen capture live on the device itself — its firmware
-offers them and waits to be asked. This process does the asking, and offers
-them on to Codex as tools, so you can say "turn it down" during a call.
-
-Register them once:
+## Running it day to day
 
 ```sh
-codex mcp add desk --url http://127.0.0.1:8790/mcp
+bun run start                  # in the foreground
+./scripts/install-service.sh   # or as a background service, which is what you want
 ```
-
-That endpoint answers to this Mac only. It has no password, because Codex has
-no way to present one — the guard is that requests from anywhere else on the
-network are refused. Four tools are offered: read the device's status, set
-volume, set brightness, capture the screen. Reboot and firmware upgrade are
-deliberately **not** offered; nothing said out loud in a call should be able to
-replace the device's firmware.
-
-## Running it as a service
-
-The device dials this Mac at boot and again whenever a call starts, so a
-listener living in a terminal window leaves the device with nothing to talk to.
-```sh
-./scripts/install-service.sh
-```
-
-It works out where this checkout is and where `bun` lives, writes the launch
-agent, and starts it. Nothing machine-specific is committed.
-
-Check it, and read its logs:
 
 ```sh
 launchctl list | grep voice-mode
@@ -96,7 +41,20 @@ tail -f /tmp/esp32-voice-mode.log      # calls: offers, answers, evidence
 tail -f /tmp/esp32-voice-mode.err.log  # Codex app-server diagnostics
 ```
 
-Remove it with `launchctl bootout gui/$(id -u)/local.esp32-voice-mode`.
+Stop it with `launchctl bootout gui/$(id -u)/local.esp32-voice-mode`.
+
+## The device's own controls
+
+Volume, brightness and screen capture live on the device itself — its firmware
+offers them and waits to be asked. This process does the asking, and offers
+them on to Codex as tools, so you can say "turn it down" during a call.
+
+That endpoint answers to this Mac only. It has no password, because Codex has
+no way to present one — the guard is that requests from anywhere else on the
+network are refused. Reboot and firmware upgrade are deliberately **not**
+offered; nothing said out loud in a call should be able to replace the device's
+firmware.
+
 
 ## Reading the log
 
