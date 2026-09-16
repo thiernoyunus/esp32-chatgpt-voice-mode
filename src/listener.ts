@@ -452,10 +452,15 @@ export async function runListener(
         }
         return handleControlRequest(request, deviceTools);
       }
+      if (requestUrl.pathname === '/ota/check') {
+        // The device asks for a firmware version on boot. There is none here -
+        // this device is flashed over its cable - and an empty object is how
+        // the old server said exactly that. A 404 works too, but the device
+        // logs it as a failed check, which reads like a fault in a log someone
+        // is scanning for real ones.
+        return Response.json({});
+      }
       if (!requestUrl.pathname.startsWith(DEVICE_PATH_PREFIX)) {
-        // Only the device and control paths are served. The device also asks
-        // this host for a firmware version on boot; answering 404 is the honest
-        // reply and the device logs it and carries on.
         return requestUrl.pathname === '/'
           ? new Response('esp32 voice mode listener\n', { status: 200 })
           : new Response('Not found', { status: 404 });
