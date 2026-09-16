@@ -86,6 +86,11 @@ export class DeviceToolBridge {
     }
     clearTimeout(pending.timeoutHandle);
     this.#pendingCalls.delete(reply.payload.id);
+    console.log(
+      reply.payload.error === undefined
+        ? `Device answered #${reply.payload.id}: ${JSON.stringify(reply.payload.result)}`
+        : `Device refused #${reply.payload.id}: ${reply.payload.error.message}`,
+    );
     pending.settle(
       reply.payload.error === undefined
         ? { ok: true, result: reply.payload.result }
@@ -104,6 +109,10 @@ export class DeviceToolBridge {
     }
     const requestId = this.#nextRequestId;
     this.#nextRequestId += 1;
+    // Logged on both sides: without this a tool call that never reaches the
+    // device looks exactly like one the device ignored, and the assistant
+    // inventing an answer looks like either.
+    console.log(`Asking the device: ${toolName} ${JSON.stringify(argumentRecord)}`);
 
     return new Promise<DeviceToolOutcome>((resolve) => {
       const timeoutHandle = setTimeout(() => {
@@ -272,6 +281,9 @@ export async function handleControlRequest(
   request: Request,
   bridge: DeviceToolBridge,
 ): Promise<Response> {
+  console.log(
+    `Codex reached the device controls${bridge.isDeviceConnected ? '' : ' (no device connected)'}.`,
+  );
   const server = createDeviceControlServer(bridge);
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined,

@@ -39,6 +39,10 @@ const CODEX_DEVELOPER_INSTRUCTION_LIST = [
   'You are the local Codex agent behind the voice device on this desk.',
   'Answer the user directly in clear English. Keep the spoken answer short and conversational; do not use Markdown.',
   'Use the MCP servers and plugins configured on this Mac when they fit the request. Do not claim an action succeeded unless the tool confirms it.',
+  // Without naming it, the model answers questions about the device from
+  // nowhere: asked its volume it will state a number it never looked up, and
+  // asked to change it will say it did. Both were observed.
+  'The device you are speaking through has controls under the "desk" tool server: its volume, its screen brightness, and a capture of its screen. Anything about the device itself is answered by calling those, never from memory. Volume and brightness are absolute 0-100 values, so read the status first before making something louder or dimmer.',
   // Everything the user says arrives as speech. There is no second channel
   // carrying chat history or app context any more, so an instruction telling
   // the model to look for one only invites it to invent one.
