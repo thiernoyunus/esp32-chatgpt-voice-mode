@@ -24,7 +24,7 @@ drop, delay or repair a single frame of voice.
 ## Connection
 
 ```
-ws://<mac-lan-address>:8790/agents/apollo/<deviceId>?token=<DEVICE_SHARED_SECRET>
+ws://<mac-lan-address>:8790/agents/voicemode/<deviceId>?token=<DEVICE_SHARED_SECRET>
 ```
 
 The path is named for the project this was forked from. It is what the firmware
@@ -82,7 +82,7 @@ To read the device's own side, over USB:
 
 ```sh
 python3 scripts/serial_log.py          # in the firmware checkout
-tail -f ~/.apollo/apollo_live.log
+tail -f ~/.voicemode/voicemode_live.log
 ```
 
 ## When something is wrong
@@ -91,7 +91,7 @@ tail -f ~/.apollo/apollo_live.log
 |---|---|---|
 | No `Device … connected` line ever | The device only dials when a call starts. | Tap it or say the wake word. Not a fault on its own. |
 | Device never finds the Mac | The Mac's address changed; the device has one baked in at flash time. | Reserve this Mac's address in the router. Nothing in software can work around it. |
-| `Refused a device connection with the wrong token` | Token mismatch. | The device's `CONFIG_APOLLO_TOKEN` must equal `DEVICE_SHARED_SECRET` in `.dev.vars`, byte for byte. |
+| `Refused a device connection with the wrong token` | Token mismatch. | The device's `CONFIG_VOICEMODE_TOKEN` must equal `DEVICE_SHARED_SECRET` in `.dev.vars`, byte for byte. |
 | Call answers, captions appear, **no sound** | Not a signalling fault — the captions prove the transport works. | See `documentation/why-a-call-goes-silent.md`. Compare the `Answer audio:` and `Answer transports:` lines against a good call. |
 | Assistant states a device fact it never looked up | It is answering from memory instead of calling a tool. | Check the log for `Asking the device:`. No line means no call was made — the instructions in `CODEX_DEVELOPER_INSTRUCTION_LIST` are what name the controls. |
 | `Could not do that: the device is not connected` | Honest and correct. | Start a call first; the socket opens with it. |

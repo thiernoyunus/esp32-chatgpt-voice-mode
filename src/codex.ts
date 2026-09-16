@@ -368,13 +368,13 @@ export class CodexAppServerClient {
 
   constructor(readonly workingDirectory: string) {
     const codexExecutable =
-      process.env.APOLLO_CODEX_BIN ??
+      process.env.VOICEMODE_CODEX_BIN ??
       (existsSync(CONFIGURED_CODEX_EXECUTABLE) ? CONFIGURED_CODEX_EXECUTABLE : 'codex');
     const appServerArguments = [
       'app-server',
       '--listen',
       'stdio://',
-      ...(process.env.APOLLO_CODEX_USE_USER_MCP === '1'
+      ...(process.env.VOICEMODE_CODEX_USE_USER_MCP === '1'
         ? []
         : CODEX_APP_SERVER_SAFE_OVERRIDES),
     ];
@@ -550,11 +550,11 @@ export class CodexAppServerClient {
           // first response the one that is most likely to arrive as captions
           // with no voice, and a silent first response trips the device's stall
           // check before the user has asked anything. Setting
-          // APOLLO_VOICE_GREETING=0 leaves the greeting out, which is how to
+          // VOICEMODE_GREETING=0 leaves the greeting out, which is how to
           // tell a greeting-only fault apart from a session that never carries
           // voice at all.
           initialItems:
-            process.env.APOLLO_VOICE_GREETING === '0'
+            process.env.VOICEMODE_GREETING === '0'
               ? undefined
               : [
                   {
@@ -824,7 +824,7 @@ export class CodexAppServerClient {
       cwd: this.workingDirectory,
       developerInstructions: buildCodexDeveloperInstructions(),
       ephemeral,
-      threadSource: 'apollo',
+      threadSource: 'voicemode',
       ...(Object.keys(config).length > 0 ? { config } : {}),
     });
     return z
@@ -996,7 +996,7 @@ export class CodexAppServerClient {
 
 
   #answerServerRequest(id: string | number, method: string): void {
-    // ponytail: phase 1 declines Codex-side approvals; map these to Apollo's
+    // ponytail: phase 1 declines Codex-side approvals; map these to the device's
     // device confirmation flow before allowing risky remote actions.
     const response = (() => {
       switch (method) {

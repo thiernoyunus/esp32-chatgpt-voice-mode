@@ -44,7 +44,7 @@ Then point the device at this Mac. In the firmware checkout, in the gitignored
 `sdkconfig.defaults.local`:
 
 ```
-CONFIG_APOLLO_URL="ws://<your-mac-lan-address>:8790"
+CONFIG_VOICEMODE_URL="ws://<your-mac-lan-address>:8790"
 ```
 
 Rebuild and flash. On boot the device asks this host for a firmware version;

@@ -162,7 +162,7 @@ describe('voice events on their way to the device', () => {
       models: [{ id: 'gpt-5.6-luna', name: 'Luna' }],
       selectedModel: 'gpt-5.6-luna',
       threadId: 'thread-1',
-      chats: [{ id: 'thread-1', name: 'Apollo voice chat' }],
+      chats: [{ id: 'thread-1', name: 'Desk voice chat' }],
     });
     expect(serverToDeviceMessageSchema.parse(JSON.parse(encoded)).type).toBe(
       'realtime_answer',

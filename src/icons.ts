@@ -11,9 +11,9 @@ const ICON_FETCH_MAX_BYTES = 256 * 1024;
 const ICON_EXPECTED_RAW_BYTES = 24 * 24 * 4;
 const ICON_EXPECTED_BASE64_LENGTH = 3072;
 const ICON_MAX_INPUT_DIMENSION = 2048;
-// Homebrew's path on this machine. Anywhere else, point APOLLO_MAGICK_BIN at
+// Homebrew's path on this machine. Anywhere else, point VOICEMODE_MAGICK_BIN at
 // the binary; a missing one only costs the icon, which falls back to text.
-const MAGICK_BIN = process.env.APOLLO_MAGICK_BIN ?? '/opt/homebrew/bin/magick';
+const MAGICK_BIN = process.env.VOICEMODE_MAGICK_BIN ?? '/opt/homebrew/bin/magick';
 const MAGICK_LIMITS: readonly string[] = [
   '-limit', 'memory', '32MiB',
   '-limit', 'map', '0',

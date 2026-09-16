@@ -17,7 +17,7 @@
  *   bun run src/listener.ts --port 8790
  *
  * Then point the device at this Mac, for example
- * `CONFIG_APOLLO_URL="ws://192.168.1.20:8790"` in the firmware's gitignored
+ * `CONFIG_VOICEMODE_URL="ws://192.168.1.20:8790"` in the firmware's gitignored
  * sdkconfig.defaults.local.
  *
  * The device's speaker is the only proof that downlink audio arrived. This
@@ -39,9 +39,10 @@ import { parseDevelopmentVariableMap } from './vars';
 
 const DEFAULT_PORT = 8790;
 
-// Named for the project this was forked from, and kept as-is: the firmware
-// dials this exact path, so changing it means reflashing the device.
-const DEVICE_PATH_PREFIX = '/agents/apollo/';
+// The firmware dials this exact path, so changing it means reflashing the
+// device. Both halves of this name live in one place each: here, and
+// BuildConnectionUrl in the firmware's codex_voice_protocol.cc.
+const DEVICE_PATH_PREFIX = '/agents/voicemode/';
 // Where Codex finds the device's controls. Loopback only - see the fetch
 // handler - because anything that can reach it can turn the device's screen
 // off and read what is on it.
@@ -364,17 +365,17 @@ type DeviceSocket = {
 };
 
 async function readListenerConfiguration(arguments_: readonly string[]): Promise<ListenerConfiguration> {
-  const environmentFilePath = process.env.APOLLO_BRIDGE_ENV_FILE ?? '.dev.vars';
+  const environmentFilePath = process.env.VOICEMODE_ENV_FILE ?? '.dev.vars';
   const variableMap = parseDevelopmentVariableMap(
     await Bun.file(environmentFilePath).text(),
   );
   const deviceToken =
-    process.env.APOLLO_DEVICE_SECRET ??
+    process.env.VOICEMODE_DEVICE_SECRET ??
     variableMap.get('DEVICE_SHARED_SECRET') ??
     '';
   if (deviceToken.length === 0) {
     throw new Error(
-      'DEVICE_SHARED_SECRET is missing. Set it in .dev.vars, or pass APOLLO_DEVICE_SECRET.',
+      'DEVICE_SHARED_SECRET is missing. Set it in .dev.vars, or pass VOICEMODE_DEVICE_SECRET.',
     );
   }
   const portFlagIndex = arguments_.indexOf('--port');
@@ -387,9 +388,9 @@ async function readListenerConfiguration(arguments_: readonly string[]): Promise
   }
   return {
     port,
-    hostname: process.env.APOLLO_DIRECT_VOICE_HOST ?? '0.0.0.0',
+    hostname: process.env.VOICEMODE_HOST ?? '0.0.0.0',
     deviceToken,
-    workingDirectory: process.env.APOLLO_CODEX_CWD ?? process.cwd(),
+    workingDirectory: process.env.VOICEMODE_CODEX_CWD ?? process.cwd(),
   };
 }
 
