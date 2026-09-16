@@ -1,0 +1,10 @@
+# Copy this to .dev.vars (which is gitignored) and replace the value.
+#
+# Any long random string will do, as long as the device is flashed with the
+# same one in CONFIG_APOLLO_TOKEN. Generate one with:
+#
+#   openssl rand -base64 32
+#
+# This is the only thing standing between your device connection and anything
+# else on your network, so do not reuse a password and do not commit it.
+DEVICE_SHARED_SECRET=replace-me

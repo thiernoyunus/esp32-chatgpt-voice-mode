@@ -36,7 +36,9 @@ bun run start
 ```
 
 It reads `DEVICE_SHARED_SECRET` from `.dev.vars` and refuses any device that
-does not present it.
+does not present it. Copy `.dev.vars.example` to `.dev.vars` and put your own
+secret in it — any long random string, as long as the device is flashed with
+the same one.
 
 Then point the device at this Mac. In the firmware checkout, in the gitignored
 `sdkconfig.defaults.local`:
@@ -46,7 +48,8 @@ CONFIG_APOLLO_URL="ws://<your-mac-lan-address>:8790"
 ```
 
 Rebuild and flash. On boot the device asks this host for a firmware version;
-the answer is a 404, the device logs one warning and carries on.
+the answer is "nothing published", and it carries on. Firmware here is flashed
+over the cable, not over the air.
 
 ### Give this Mac a fixed address
 
@@ -78,12 +81,12 @@ replace the device's firmware.
 
 The device dials this Mac at boot and again whenever a call starts, so a
 listener living in a terminal window leaves the device with nothing to talk to.
-`service/` holds a launch agent. Edit the two absolute paths in it, then:
-
 ```sh
-cp service/*.plist ~/Library/LaunchAgents/
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.thiernoyunusdiallo.esp32-voice-mode.plist
+./scripts/install-service.sh
 ```
+
+It works out where this checkout is and where `bun` lives, writes the launch
+agent, and starts it. Nothing machine-specific is committed.
 
 Check it, and read its logs:
 
@@ -93,7 +96,7 @@ tail -f /tmp/esp32-voice-mode.log      # calls: offers, answers, evidence
 tail -f /tmp/esp32-voice-mode.err.log  # Codex app-server diagnostics
 ```
 
-Remove it with `launchctl bootout gui/$(id -u)/com.thiernoyunusdiallo.esp32-voice-mode`.
+Remove it with `launchctl bootout gui/$(id -u)/local.esp32-voice-mode`.
 
 ## Reading the log
 
@@ -131,9 +134,10 @@ transport. Compare a silent call against a good one.
 
 ## History
 
-This started as a fork of the Apollo starter, which routed every call through a
-Cloudflare Worker. The Worker is gone: about 29,000 lines of it, replaced by the
-few hundred here. See [LICENSE](LICENSE) for what that leaves behind.
+This began from the Apollo starter — generated from its template rather than
+forked from it — which routed every call through a Cloudflare Worker. The
+Worker is gone: about 29,000 lines of it, replaced by the few hundred here.
+See [LICENSE](LICENSE) for what that leaves behind.
 
 The device firmware descends from
 [78/xiaozhi-esp32](https://github.com/78/xiaozhi-esp32), which is excellent and
