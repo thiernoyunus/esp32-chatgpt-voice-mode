@@ -1,7 +1,7 @@
 # Copy this to .dev.vars (which is gitignored) and replace the value.
 #
 # Any long random string will do, as long as the device is flashed with the
-# same one in CONFIG_APOLLO_TOKEN. Generate one with:
+# same one in CONFIG_VOICEMODE_TOKEN. Generate one with:
 #
 #   openssl rand -base64 32
 #
