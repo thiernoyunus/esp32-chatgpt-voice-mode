@@ -4,8 +4,8 @@ A small round-screen ESP32 device on a desk that you talk to. It connects to
 one Mac over your own wifi, and that Mac does the thinking. No server of mine
 is involved, and nothing about the conversation is stored anywhere but the Mac.
 
-This repository is the Mac half. The device half is firmware, in its own
-checkout.
+Both halves live here: `firmware/` is what runs on the device, `mac/` is what
+runs on your Mac. One clone, and the setup guide below sets up both.
 
 ```
   device  ──── wifi ────►  this Mac  ──── Codex ────►  OpenAI realtime voice
@@ -13,13 +13,11 @@ checkout.
      └───────────────── spoken audio, directly ────────────────┘
 ```
 
-The arrows matter. Only the **call setup** passes through this Mac: the
-device's WebRTC offer comes in, a ChatGPT Voice session is opened on the Codex
-app-server running here, and the answer goes back. The **spoken audio never
-touches this Mac at all** — the answer points the device straight at the
-realtime service. This process sees signalling and captions and not one audio
-packet, which is worth knowing before you debug a silent call: nothing here can
-drop, delay, or repair the voice.
+The arrows matter. Only the **call setup** passes through the Mac. The **spoken
+audio never touches it** — the answer points the device straight at the realtime
+service, so the Mac sees signalling and captions and not one audio packet. Worth
+knowing before debugging a silent call: nothing on the Mac can drop, delay or
+repair the voice.
 
 ## Setting it up
 
@@ -31,6 +29,7 @@ with this page.
 ## Running it day to day
 
 ```sh
+cd mac
 bun run start                  # in the foreground
 ./scripts/install-service.sh   # or as a background service, which is what you want
 ```
@@ -89,6 +88,18 @@ transport. Compare a silent call against a good one.
   captions keep arriving. The device catches this in about two and a half
   seconds, ends the call, and a later attempt usually gets a working session.
   This predates the direct connection and also happened on the old cloud path.
+
+## Layout
+
+```
+firmware/   what runs on the device - screens, audio, wake word, the call
+mac/        what runs on your Mac - opens the ChatGPT Voice session
+SETUP.md    the path from nothing to a working device
+```
+
+Everything except the conversation itself lives on the device. Unplug the Mac
+and it still boots, tells the time, joins wifi and lets you change settings —
+you just cannot talk to it.
 
 ## History
 

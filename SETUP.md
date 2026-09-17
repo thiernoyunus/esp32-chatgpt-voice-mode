@@ -37,11 +37,13 @@ Whether a particular ChatGPT plan is required for realtime voice, I do not
 know — if calls fail to start and your Codex version is current, that is the
 next thing to suspect.
 
-## 1. The Mac half
+## 1. The Mac half (`mac/`)
+
+One clone gets you both halves:
 
 ```sh
 git clone https://github.com/thiernoyunus/esp32-chatgpt-voice-mode.git
-cd esp32-chatgpt-voice-mode
+cd esp32-chatgpt-voice-mode/mac
 bun install
 ```
 
@@ -88,14 +90,15 @@ goes silent until you rebuild and reflash. A DHCP reservation in your router
 settings takes two minutes and removes the problem permanently. Nothing in this
 software can work around it.
 
-## 2. The device half
+## 2. The device half (`firmware/`)
+
+Already cloned — it is the `firmware/` folder beside `mac/`:
 
 ```sh
-git clone https://github.com/thiernoyunus/esp32-chatgpt-voice-mode-firmware.git
-cd esp32-chatgpt-voice-mode-firmware
+cd ../firmware
 ```
 
-Create `sdkconfig.defaults.local` — it is gitignored because it holds your
+Create `firmware/sdkconfig.defaults.local` — it is gitignored because it holds your
 secret, so **never commit it**:
 
 ```
@@ -106,18 +109,24 @@ CONFIG_VOICEMODE_DEVICE_ID="desk"
 
 Use your own address, and the exact secret from step 1.
 
-Build:
+Build. The `set-target` line is only needed the first time, and skipping it is
+the most likely way to fail here — without it the build assumes a plain ESP32,
+the board never gets selected, and configuration stops with *"The selected
+board does not define BOARD_DIR"*:
 
 ```sh
 . ~/esp/esp-idf/export.sh
+idf.py set-target esp32s3
 idf.py build
 ```
 
 **Check:** the last lines say `Project build complete` and report a binary
-size. Note the trap in
-[documentation/operations/build.md](https://github.com/thiernoyunus/esp32-chatgpt-voice-mode-firmware/blob/main/documentation/operations/build.md):
-the older `scripts/build.py` wrapper exits 0 even when the build failed, so
-read the output rather than trusting the exit code.
+size, with about 13% of the partition free.
+
+Note the trap in
+[firmware/documentation/operations/build.md](firmware/documentation/operations/build.md):
+the older `scripts/build.py` wrapper exits 0 even when the build failed. `idf.py`
+itself reports failure honestly, which is why it is used here.
 
 Plug the device in and flash:
 
@@ -157,7 +166,7 @@ Call ended: … microphone heard; assistant spoke 7 words
 **Captions are not sound.** All of the above can appear on a call you could not
 hear. The only proof of working audio is a person standing at the device
 hearing it. If it connects but stays silent, see
-[documentation/why-a-call-goes-silent.md](documentation/why-a-call-goes-silent.md)
+[mac/documentation/why-a-call-goes-silent.md](mac/documentation/why-a-call-goes-silent.md)
 — most of the obvious theories are already ruled out there.
 
 ## 5. The device's own controls
