@@ -5,6 +5,18 @@ cmake_minimum_required(VERSION 3.16)
 # Add this line to disable the specific warning
 add_compile_options(-Wno-missing-field-initializers)
 
+# Machine-local settings - the address of the Mac to dial and the shared
+# secret - live in a gitignored sdkconfig.defaults.local. ESP-IDF does not look
+# for that name on its own, so it is named here: without this, `idf.py build`
+# silently produces firmware with an empty url and token, and the device shows
+# "connecting" for a moment and gives up with nothing in any log to explain it.
+# ESP-IDF appends the per-target file (sdkconfig.defaults.esp32s3) to each entry
+# by itself. Last entry wins, so the local file overrides the defaults.
+set(SDKCONFIG_DEFAULTS "sdkconfig.defaults")
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/sdkconfig.defaults.local")
+    list(APPEND SDKCONFIG_DEFAULTS "sdkconfig.defaults.local")
+endif()
+
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 # "Trim" the build. Include the minimal set of components, main, and anything it depends on.
 idf_build_set_property(MINIMAL_BUILD ON)

@@ -46,7 +46,6 @@ public:
     // check tears the call down because a wedged audio track never recovers on
     // its own; this tells the application the teardown was ours and a fresh
     // call is worth making. Reading it clears it, so one stall buys one retry.
-    bool TakeStallRecovery() { return stall_recovery_.exchange(false); }
 
     // The five links a call needs, in the order a healthy one reaches them.
     // A silent call can then say which link never arrived instead of only that
@@ -95,8 +94,6 @@ private:
     std::atomic<uint32_t> speech_expected_since_ms_{0};
     // Reset by the first real speech frame, so the budget runs down only while
     // calls keep coming up silent - it is not a lifetime cap.
-    std::atomic<bool> stall_recovery_{false};
-    std::atomic<int> stall_retries_{0};
     // The reply as it is being written. Touched only from the data-channel
     // callback, which is the one task that parses these messages.
     std::string transcript_partial_;

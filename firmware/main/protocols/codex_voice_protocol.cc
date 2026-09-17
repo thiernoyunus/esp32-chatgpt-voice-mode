@@ -47,7 +47,6 @@ constexpr uint32_t kAudioLogBurstGapMs = 250;
 constexpr size_t kMinimumVoiceAudioBytes = 10;
 /* Consecutive silent calls to rebuild before handing it back to the user. Each
  * attempt costs kInboundAudioStallMs, so this is seconds, not minutes. */
-constexpr int kMaxStallRetries = 3;
 
 std::string BuildConnectionUrl(const std::string& base_url, const std::string& device_id,
                                const std::string& token) {
@@ -95,31 +94,6 @@ int OpusPacketDurationMs(const uint8_t* data, size_t size) {
 
 static_assert(OpusFrameDurationMs(31) == 20);
 
-/* What to tell someone whose call went quiet, decided by the link that never
- * arrived. "Nothing came through" is true of five different faults, and only one
- * of them is worth retrying unchanged; naming the link is what makes the
- * message worth reading. */
-std::string StallMessage(uint32_t missing_stage, bool will_retry) {
-    const char* cause = "The voice stopped coming through";
-    switch (missing_stage) {
-        case kVoiceStagePeerConnected:
-        case kVoiceStageAudioTrack:
-            cause = "The reply's audio never arrived";
-            break;
-        case kVoiceStageEventChannel:
-            cause = "The voice channel never opened";
-            break;
-        case kVoiceStageSessionStarted:
-            cause = "The voice session never started";
-            break;
-        case kVoiceStagePlaybackAdmitted:
-            cause = "The reply never reached the speaker";
-            break;
-        default:
-            break;
-    }
-    return std::string(cause) + (will_retry ? ". Reconnecting." : ". Tap to try again.");
-}
 
 const char* ReadErrorMessage(const cJSON* root) {
     const cJSON* error = cJSON_GetObjectItemCaseSensitive(root, "error");
@@ -831,14 +805,24 @@ void CodexVoiceProtocol::CheckInboundAudioStall() {
     /* The link that never arrived is the difference between a network fault
      * and a playback fault, so report it rather than only the silence. */
     const uint32_t missing_stage = readiness_.FirstMissing();
-    const bool will_retry = stall_retries_.fetch_add(1) < kMaxStallRetries;
-    ESP_LOGE(TAG, "No reply audio for %lu ms; reached %s, missing %s",
+    ESP_LOGW(TAG, "No reply audio for %lu ms; reached %s, missing %s",
              (unsigned long)(now - quiet_since), readiness_.Describe().c_str(),
              missing_stage == 0 ? "nothing" : VoiceStageName(missing_stage));
-    if (will_retry) {
-        stall_recovery_.store(true);
-    }
-    Fail(StallMessage(missing_stage, will_retry));
+    /* Reporting only, deliberately.
+     *
+     * This used to end the call and reconnect. On this hardware it ends calls
+     * that are working: the log shows inbound audio frames arriving steadily -
+     * audio_frames climbing 4917, 4968, 5018, 5069, 5119 - across the very
+     * moment this fires, and the greeting is audible while it does. After a
+     * reconnect the run never records reaching audio-track again even though
+     * frames keep being counted, so the check and the audio handler disagree
+     * about the same connection, and the check loses. Tearing the call down on
+     * that judgement cost more calls than the silent-session fault it was
+     * written for.
+     *
+     * The measurement stays, because it is the evidence for the real fix. What
+     * is gone is acting on it. Before restoring the teardown, explain why those
+     * two disagree; do not simply lengthen the timeout. */
 }
 
 int CodexVoiceProtocol::OnPeerState(esp_peer_state_t state, void* context) {
@@ -899,9 +883,6 @@ int CodexVoiceProtocol::OnPeerAudio(esp_peer_audio_frame_t* frame, void* context
         // Either the announced track or its first real frame is enough: both
         // mean the reply's audio is reaching the device.
         protocol->MarkStage(kVoiceStageAudioTrack);
-        // A reply arrived, so the run of silent calls is over and the next
-        // stall gets a full budget again.
-        protocol->stall_retries_.store(0);
         // Only the timestamp. This runs on the WebRTC callback, which knows
         // nothing about which reply the frame belongs to - the stall check
         // compares this against when it started listening and draws its own

@@ -14,15 +14,12 @@ import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
-SOURCE = (ROOT / "main/protocols/codex_voice_protocol.cc").read_text()
 
-match = re.search(
-    r"std::string StallMessage\(uint32_t missing_stage, bool will_retry\) \{.*?\n\}",
-    SOURCE,
-    re.S,
-)
-if match is None:
-    sys.exit("StallMessage is gone from codex_voice_protocol.cc; this test tracks it")
+# StallMessage used to be lifted out of codex_voice_protocol.cc and checked
+# here. The reply-audio watchdog reports and no longer ends calls, so there is
+# no message to write and nothing to lift. What is still worth pinning is the
+# readiness tracking itself: it is the evidence for why the watchdog and the
+# audio handler disagree, which is still unexplained.
 
 PROGRAM = r"""
 #include "voice_readiness.h"
@@ -31,7 +28,6 @@ PROGRAM = r"""
 #include <cstdio>
 #include <string>
 
-STALL_MESSAGE
 
 int main() {
     /* A call reaches the links in order, and each one is reported once. */
@@ -73,35 +69,11 @@ int main() {
         assert(readiness.Describe() == "none");
     }
 
-    /* The part a person reads. Every missing link has to name itself, because
-     * "nothing came through" is true of each of them. */
-    assert(StallMessage(kVoiceStagePeerConnected, true).find("audio never arrived") != std::string::npos);
-    assert(StallMessage(kVoiceStageAudioTrack, true).find("audio never arrived") != std::string::npos);
-    assert(StallMessage(kVoiceStageEventChannel, true).find("channel never opened") != std::string::npos);
-    assert(StallMessage(kVoiceStageSessionStarted, true).find("session never started") != std::string::npos);
-    assert(StallMessage(kVoiceStagePlaybackAdmitted, true).find("speaker") != std::string::npos);
-
-    /* Retrying is promised only while there is a retry left. */
-    assert(StallMessage(kVoiceStageAudioTrack, true).find("Reconnecting") != std::string::npos);
-    assert(StallMessage(kVoiceStageAudioTrack, false).find("Reconnecting") == std::string::npos);
-    assert(StallMessage(kVoiceStageAudioTrack, false).find("Tap to try again") != std::string::npos);
-
-    /* Every message still has to be a message. */
-    const uint32_t every_stage[] = {kVoiceStagePeerConnected, kVoiceStageAudioTrack,
-                                    kVoiceStageEventChannel, kVoiceStageSessionStarted,
-                                    kVoiceStagePlaybackAdmitted, 0u};
-    for (uint32_t missing : every_stage) {
-        const std::string message = StallMessage(missing, true);
-        assert(!message.empty());
-        assert(message.back() == '.');
-    }
-
-    printf("readiness stages and stall wording verified\n");
     return 0;
 }
 """
 
-program = PROGRAM.replace("STALL_MESSAGE", match.group(0))
+program = PROGRAM
 
 with tempfile.TemporaryDirectory() as directory:
     source = Path(directory) / "readiness_check.cc"

@@ -213,12 +213,10 @@ void Application::Run() {
         auto bits = xEventGroupWaitBits(event_group_, ALL_EVENTS, pdTRUE, pdFALSE, portMAX_DELAY);
 
         if (bits & MAIN_EVENT_ERROR) {
-            // A reply transcribed but never heard is the one failure a fresh
-            // call fixes, and the message already promised it. Nothing did it.
-            bool reopen = false;
-            if (auto* voice = dynamic_cast<CodexVoiceProtocol*>(protocol_.get())) {
-                reopen = voice->TakeStallRecovery() && !call_end_requested_.load();
-            }
+            // The reply-audio watchdog used to ask for a fresh call here. It
+            // is reporting-only now - see CheckInboundAudioStall - so nothing
+            // reopens a call behind the user's back.
+            const bool reopen = false;
             if (protocol_) {
                 protocol_->CloseAudioChannel();
             }

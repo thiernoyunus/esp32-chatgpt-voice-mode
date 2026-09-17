@@ -123,6 +123,17 @@ idf.py build
 **Check:** the last lines say `Project build complete` and report a binary
 size, with about 13% of the partition free.
 
+**Check this too**, because it fails silently and costs an evening:
+
+```sh
+grep -E '^CONFIG_VOICEMODE_(URL|TOKEN)' sdkconfig
+```
+
+Those must show your address and your secret. If they are empty strings, the
+build did not read `sdkconfig.defaults.local`, and the device you flash will
+show "connecting" for a moment and give up with nothing in any log to explain
+why. Delete `sdkconfig` and build again.
+
 Note the trap in
 [firmware/documentation/operations/build.md](firmware/documentation/operations/build.md):
 the older `scripts/build.py` wrapper exits 0 even when the build failed. `idf.py`
