@@ -153,8 +153,11 @@ private:
     bool aborted_ = false;
     bool assets_version_checked_ = false;
     bool play_popup_on_listening_ = false;  // Flag to play popup sound after state changes to listening
+    /* Whether this call has already played its "microphone open" cue. Reset
+     * when the device goes idle, which is where one call ends and the next
+     * begins. */
+    bool call_cue_played_ = false;
     bool pending_listening_start_ = false;  // Waiting for playback to drain before starting listening (auto mode)
-    bool pending_speech_stop_ = false;  // Reply fully received, still playing out
     bool reopen_listening_after_speak_ = true;  // Cleared by turn_end when the reply expects no answer
     int idle_seconds_ = 0;              // Seconds since the last sign of life
     std::atomic<bool> is_screen_asleep_{false};

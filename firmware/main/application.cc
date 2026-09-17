@@ -264,14 +264,6 @@ void Application::Run() {
                 pending_listening_start_ = false;
                 StartListeningAudio();
             }
-
-            // Deferred end of speech: the reply had finished arriving long
-            // before it finished playing.
-            if (pending_speech_stop_ && GetDeviceState() == kDeviceStateSpeaking &&
-                audio_service_.IsPlaybackIdle()) {
-                pending_speech_stop_ = false;
-                FinishSpeaking();
-            }
         }
 
         if (bits & MAIN_EVENT_TOGGLE_CHAT) {
@@ -1356,6 +1348,8 @@ void Application::HandleStateChangedEvent() {
         case kDeviceStateIdle:
             // A call that ended before it started must not speak into the next one.
             voice_preroll_.Clear();
+            // The next call is a new call, and gets its opening cue.
+            call_cue_played_ = false;
             voice_model_picker_open_ = false;
             display->HideVoiceModels();
             display->SetStatus(Lang::Strings::STANDBY);
@@ -1424,11 +1418,21 @@ void Application::StartListeningAudio() {
 
     ConfigureWakeWordForListening();
 
-    // Every listening start gets the cue, held button or wake word alike. It
-    // has to play after ResetDecoder (in EnableVoiceProcessing) or it would be
-    // cleared before it sounds.
+    // Once per call, not once per turn.
+    //
+    // The cue says "the microphone is open". That was worth hearing when a
+    // call was one exchange long, and became a sound between every reply and
+    // the next once calls stopped ending on their own - each one played into
+    // a live microphone the device can hear itself through. The first one
+    // still earns its place: it is how you know the call is really up.
+    //
+    // It has to play after ResetDecoder (in EnableVoiceProcessing) or it would
+    // be cleared before it sounds.
     play_popup_on_listening_ = false;
-    audio_service_.PlaySound(Lang::SoundVariants::ListenStart());
+    if (!call_cue_played_) {
+        call_cue_played_ = true;
+        audio_service_.PlaySound(Lang::SoundVariants::ListenStart());
+    }
 
     // Each new listen session starts optimistic; the reply's turn_end says
     // whether the mic reopens after the assistant speaks.

@@ -808,7 +808,20 @@ void CodexVoiceProtocol::CheckInboundAudioStall() {
     ESP_LOGW(TAG, "No reply audio for %lu ms; reached %s, missing %s",
              (unsigned long)(now - quiet_since), readiness_.Describe().c_str(),
              missing_stage == 0 ? "nothing" : VoiceStageName(missing_stage));
-    /* Reporting only, deliberately.
+    /* One recovery, and it is not a teardown.
+     *
+     * A reply whose audio stops also tends not to deliver the "transcript
+     * complete" that ends the turn, and the only way out of speaking is that
+     * event. Without it the device sits in speaking with the microphone shut:
+     * the assistant has visibly finished, the user talks, and nothing hears
+     * them. Ending the turn here hands the microphone back without touching
+     * the call, which is the smallest thing that unsticks it. */
+    if (speaking_.load()) {
+        ESP_LOGW(TAG, "Reply went quiet without finishing; reopening the microphone");
+        StopSpeaking();
+    }
+
+    /* Beyond that, reporting only, deliberately.
      *
      * This used to end the call and reconnect. On this hardware it ends calls
      * that are working: the log shows inbound audio frames arriving steadily -
