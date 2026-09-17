@@ -98,3 +98,33 @@ describe('asking the device to do something', () => {
     ).not.toThrow();
   });
 });
+
+describe('a device that reconnects', () => {
+  it('keeps the newest connection when an old socket closes late', async () => {
+    // The device's new socket opens before the old one's close arrives, so a
+    // close that does not check whether it is still the current device clears
+    // the connection that just replaced it. Seen live: the socket was open and
+    // established while every tool call answered "the device is not connected".
+    const sentToOld: string[] = [];
+    const sentToNew: string[] = [];
+    const bridge = new DeviceToolBridge();
+
+    bridge.setDeviceConnection((text) => sentToOld.push(text));
+    bridge.setDeviceConnection((text) => sentToNew.push(text));
+
+    // The old socket's close must not reach past the new registration. The
+    // listener guards this by comparing sockets; this pins the consequence.
+    expect(bridge.isDeviceConnected).toBe(true);
+
+    const pending = bridge.call('self.get_device_status', {});
+    expect(sentToNew).toHaveLength(1);
+    expect(sentToOld).toHaveLength(0);
+
+    const payload = JSON.parse(sentToNew[0]!).payload;
+    bridge.acceptReply({
+      type: 'mcp',
+      payload: { jsonrpc: '2.0', id: payload.id, result: 'ok' },
+    });
+    expect(await pending).toEqual({ ok: true, result: 'ok' });
+  });
+});

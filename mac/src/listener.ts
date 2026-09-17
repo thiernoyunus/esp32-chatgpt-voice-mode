@@ -433,6 +433,14 @@ export async function runListener(
 
   const activeCalls = new Map<string, DirectVoiceCallLog>();
   const deviceTools = new DeviceToolBridge();
+  // Which socket is the device right now.
+  //
+  // A device that reconnects gives us the new socket's open before the old
+  // socket's close - the old one has to time out first. A close that assumes
+  // it is the current device then clears the connection that just arrived and
+  // stops the call running on it, which looks like a device that is plainly
+  // still connected and has stopped talking.
+  let currentDeviceSocket: DeviceSocket | null = null;
 
   // Deliberate order: the port opens first, and only then does Codex start.
   // Codex reaches back to this same port for the device controls, so starting
@@ -484,6 +492,7 @@ export async function runListener(
     websocket: {
       open(socket) {
         console.log(`Device "${socket.data.deviceId}" connected on the local network.`);
+        currentDeviceSocket = socket;
         // Its controls become available to Codex for as long as it is here.
         deviceTools.setDeviceConnection((text) => sendToDevice(socket, text));
       },
@@ -591,7 +600,15 @@ export async function runListener(
           });
       },
       close(socket) {
+        if (currentDeviceSocket !== socket) {
+          // A socket the device already replaced. Saying so is worth one line:
+          // it is the difference between a device that left and a device that
+          // reconnected, and they read identically otherwise.
+          console.log(`Closed an old socket for "${socket.data.deviceId}"; a newer one is live.`);
+          return;
+        }
         console.log(`Device "${socket.data.deviceId}" disconnected.`);
+        currentDeviceSocket = null;
         deviceTools.setDeviceConnection(null);
         for (const call of activeCalls.values()) {
           void codexClient.stopRealtimeSession(call.requestId);
