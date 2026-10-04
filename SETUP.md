@@ -247,7 +247,9 @@ Saved speech remains in the voice timeline.
 
 The log prints `Voice chat released` when Codex accepts the release. The desktop
 can then archive once Codex finishes closing the chat. This is not a promise to
-interrupt genuine work still running in that chat. Release errors are logged.
+interrupt genuine work still running in that chat. Release errors are logged. The desktop receives a final status update after
+hang-up, and delayed live updates cannot overwrite it. Real ongoing work still
+appears active and may correctly require confirmation before archiving.
 
 ## When it breaks
 

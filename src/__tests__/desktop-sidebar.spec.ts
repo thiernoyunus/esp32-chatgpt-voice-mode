@@ -4,7 +4,7 @@ import { createServer, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { DesktopConversationBridge, desktopConversationDates, desktopVoiceTurns } from '../codex';
+import { DesktopConversationBridge, desktopConversationDates, desktopVoiceTurns, desktopRuntimeStatus } from '../codex';
 
 test('saved speech becomes visible chat messages without starting an agent turn', () => {
   const entries = [
@@ -118,10 +118,54 @@ test('only explicitly saved chats send a targeted desktop refresh', async () => 
       sourceClientId: 'test-desktop-client',
       params: { hostId: 'local', conversationId: 'saved-chat' },
     }]);
+
+    const send = (message: Record<string, unknown>) => {
+      const body = Buffer.from(JSON.stringify(message));
+      const frame = Buffer.alloc(body.length + 4);
+      frame.writeUInt32LE(body.length); body.copy(frame, 4);
+      peer!.write(frame);
+    };
+    let status = { type: 'active' };
+    let delayed: (() => void) | undefined;
+    let delayNext = false;
+    bridge.registerThread('saved-chat', async () => {
+      const captured = status;
+      if (delayNext) {
+        delayNext = false;
+        await new Promise<void>((resolve) => { delayed = resolve; });
+      }
+      return { threadRuntimeStatus: captured, turns: ['saved speech'] };
+    });
+    send({ type: 'broadcast', method: 'thread-stream-following-changed',
+      sourceClientId: 'desktop', params: { conversationId: 'saved-chat', following: true } });
+    const snapshots = () => messages.filter((m) => m.method === 'thread-stream-state-changed');
+    await waitFor(() => snapshots().length === 1);
+    expect(snapshots()[0].params.change.conversationState.threadRuntimeStatus.type).toBe('active');
+    delayNext = true;
+    bridge.publish('saved-chat');
+    await waitFor(() => delayed !== undefined);
+    status = { type: 'idle' };
+    await bridge.publishAndWait('saved-chat');
+    await waitFor(() => snapshots().length === 2);
+    delayed!();
+    await Bun.sleep(20);
+    expect(snapshots()).toHaveLength(2);
+    expect(snapshots()[1].params.change.conversationState).toEqual({
+      threadRuntimeStatus: { type: 'idle' }, turns: ['saved speech'],
+    });
   } finally {
     bridge.close();
     peer?.destroy();
     await new Promise<void>((resolve) => server.close(() => resolve()));
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test('ended voice becomes idle without hiding real ongoing work or errors', () => {
+  expect(desktopRuntimeStatus(false, { type: 'notLoaded' })).toEqual({ type: 'idle' });
+  expect(desktopRuntimeStatus(false, { type: 'idle' })).toEqual({ type: 'idle' });
+  expect(desktopRuntimeStatus(true, { type: 'idle' })).toEqual({ type: 'active', activeFlags: [] });
+  expect(desktopRuntimeStatus(false, { type: 'active', activeFlags: ['waitingOnApproval'] }))
+    .toEqual({ type: 'active', activeFlags: ['waitingOnApproval'] });
+  expect(desktopRuntimeStatus(false, { type: 'systemError' })).toEqual({ type: 'systemError' });
 });
