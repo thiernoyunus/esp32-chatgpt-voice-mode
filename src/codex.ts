@@ -682,14 +682,6 @@ function debugConversationBridge(
   // #endregion
 }
 
-export function desktopRuntimeStatus(voiceActive: boolean, status: unknown): DesktopIpcRecord {
-  const actual = desktopIpcRecord(status);
-  if (actual?.type === 'active') return actual;
-  if (voiceActive) return { type: 'active', activeFlags: [] };
-  if (actual?.type === 'systemError') return actual;
-  return { type: 'idle' };
-}
-
 /**
  * Keeps the desktop app's read-only conversation view in sync with the
  * separate app-server used by the voice bridge.
@@ -697,7 +689,6 @@ export function desktopRuntimeStatus(voiceActive: boolean, status: unknown): Des
  * This is a private desktop capability, so it is deliberately best effort:
  * voice still works when the app is closed or its IPC protocol changes.
  */
-
 export class DesktopConversationBridge {
   readonly #socketPath: string;
   readonly #threads = new Map<
@@ -706,7 +697,6 @@ export class DesktopConversationBridge {
       readonly provider: DesktopConversationStateProvider;
       readonly followerClientIdSet: Set<string>;
       revision: number;
-      publishGeneration: number;
     }
   >();
   #socket: Socket | null = null;
@@ -742,17 +732,12 @@ export class DesktopConversationBridge {
       provider,
       followerClientIdSet: existing?.followerClientIdSet ?? new Set(),
       revision: existing?.revision ?? 0,
-      publishGeneration: existing?.publishGeneration ?? 0,
     });
     this.invalidate();
   }
 
   publish(threadId: string): void {
-    void this.publishAndWait(threadId);
-  }
-
-  async publishAndWait(threadId: string): Promise<void> {
-    await this.#publishRevision(threadId).catch(() => undefined);
+    void this.#publishRevision(threadId).catch(() => undefined);
   }
 
   /**
@@ -768,7 +753,6 @@ export class DesktopConversationBridge {
     if (thread === undefined || !this.#connected || thread.followerClientIdSet.size === 0) {
       return null;
     }
-    const generation = ++thread.publishGeneration;
     const publishStartedAt = Date.now();
     debugConversationBridge('H2', 'DesktopConversationBridge.publish', 'snapshot requested', {
       threadId,
@@ -776,8 +760,7 @@ export class DesktopConversationBridge {
     });
     const conversationState = await thread.provider().catch(() => null);
     if (conversationState === null) return null;
-    if (!this.#connected || this.#threads.get(threadId) !== thread ||
-        generation !== thread.publishGeneration) return null;
+    if (!this.#connected || this.#threads.get(threadId) !== thread) return null;
     debugConversationBridge('H1,H2,H3', 'DesktopConversationBridge.publish', 'snapshot ready', {
       threadId,
       durationMs: Date.now() - publishStartedAt,
@@ -1497,8 +1480,6 @@ export class CodexAppServerClient {
     const startedAt = Date.now();
     if (await releaseVoiceChat((method, params) => this.#request(method, params), threadId)) {
       console.log(`Voice chat released: ${threadId} in ${Date.now() - startedAt} ms.`);
-      await this.#desktopConversationBridge.publishAndWait(threadId);
-      this.#desktopConversationBridge.invalidate();
     }
   }
 
@@ -1575,13 +1556,6 @@ export class CodexAppServerClient {
   }
 
   #handleNotification(method: string, params: unknown): void {
-    if (method === 'thread/status/changed' || method === 'thread/closed') {
-      const threadId = desktopIpcString(desktopIpcRecord(params)?.threadId);
-      if (threadId !== null) {
-        this.#desktopConversationBridge.publish(threadId);
-        this.#desktopConversationBridge.invalidate();
-      }
-    }
     const activity = readRealtimeActivity(method, params);
     const realtimeSession = this.#activeRealtimeSession;
     if (activity !== null && realtimeSession?.threadId === activity.threadId) {
@@ -1919,7 +1893,7 @@ export class CodexAppServerClient {
       latestCollaborationMode: collaborationMode,
       hasUnreadTurn: false,
       threadGoal: thread.threadGoal ?? null,
-      threadRuntimeStatus: desktopRuntimeStatus(isActive, thread.status),
+      threadRuntimeStatus: isActive ? { type: 'active', activeFlags: [] } : { type: 'idle' },
       rolloutPath: thread.rolloutPath ?? thread.path ?? null,
       gitInfo: thread.gitInfo ?? null,
       resumeState: thread.resumeState ?? 'resumed',
@@ -2141,7 +2115,7 @@ export class CodexAppServerClient {
       this.#lastFailedSession = activeSession;
     }
     if (threadId !== null) {
-      void this.#releaseThread(threadId).finally(() => {
+        void this.#releaseThread(threadId).finally(() => {
         this.#desktopConversationBridge.invalidate();
         this.#desktopConversationBridge.publish(threadId);
       });
