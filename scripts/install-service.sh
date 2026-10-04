@@ -22,7 +22,7 @@ fi
 # Machine-specific Codex settings are passed through from this shell rather
 # than committed, so nobody else inherits one person's model or plugin list.
 PASSTHROUGH=""
-for name in VOICEMODE_CODEX_MODEL VOICEMODE_CODEX_DISABLE_MCP VOICEMODE_CODEX_BIN VOICEMODE_CODEX_ROOT; do
+for name in VOICEMODE_CODEX_MODEL VOICEMODE_CODEX_DISABLE_MCP VOICEMODE_CODEX_BIN VOICEMODE_CODEX_ROOT VOICEMODE_CODEX_CWD; do
   eval "value=\${$name:-}"
   if [ -n "$value" ]; then
     PASSTHROUGH="$PASSTHROUGH
@@ -73,5 +73,7 @@ done
 launchctl bootstrap "gui/$(id -u)" "$PLIST"
 
 echo "Installed $LABEL"
+echo "  New chats default to ~/Library/Application Support/ESP32 Voice Mode/chats."
+echo "  Check for Voice chat folder verified by Codex before testing a call."
 echo "  logs:  tail -f /tmp/esp32-voice-mode.log"
 echo "  stop:  launchctl bootout gui/$(id -u)/$LABEL"

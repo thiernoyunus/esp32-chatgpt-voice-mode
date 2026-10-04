@@ -16,6 +16,7 @@ import {
 } from './codex-events';
 import { readRealtimeActivity, ConnectorMetadataCache } from './activity';
 import { forwardActivityIcon, resolveIconPixels } from './icons';
+import { voiceStorageRoot, voiceStorageError } from './voice-storage';
 
 const CONFIGURED_CODEX_EXECUTABLE =
   '/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex';
@@ -1184,6 +1185,15 @@ export class CodexAppServerClient {
       },
     });
     this.#send({ method: 'initialized', params: {} });
+    const storageRoot = voiceStorageRoot();
+    try {
+      mkdirSync(storageRoot, { recursive: true });
+      // Ask the child itself: the listener may have access that Codex lacks.
+      await this.#request('config/read', { cwd: storageRoot, includeLayers: false });
+    } catch (error) {
+      throw voiceStorageError(storageRoot, error);
+    }
+    console.log(`Voice chat folder verified by Codex: ${storageRoot}`);
     console.log(`Codex is ready in ${this.workingDirectory}`);
     void this.#refreshRealtimePickerData();
   }
@@ -1757,30 +1767,13 @@ export class CodexAppServerClient {
     }
   }
 
-  /**
-   * Where a voice chat keeps its working files.
-   *
-   * The desktop app gives every voice chat a scratch folder named after the day
-   * it was created - ~/Documents/Codex/<date>/realtime-voice-chat - which is why
-   * its chats look like the app's. Ours all shared one fixed folder, which is
-   * one of the ways they stood out. This follows the app's convention.
-   *
-   * VOICEMODE_CODEX_ROOT names the root the dated folder goes under;
-   * VOICEMODE_CODEX_CWD is honoured as the same thing for older installations,
-   * so a value that used to be the chat's exact folder now becomes its parent.
-   */
+  /** Make a new chat under the configured service storage folder. */
   #voiceChatFolder(): string {
-    const configuredRoot = process.env.VOICEMODE_CODEX_ROOT?.trim() ||
-      process.env.VOICEMODE_CODEX_CWD?.trim();
-    const root = configuredRoot !== undefined && configuredRoot.length > 0
-      ? configuredRoot
-      : join(homedir(), 'Documents', 'Codex');
+    const root = voiceStorageRoot();
     try {
       return createVoiceChatFolder(root);
-    } catch {
-      // If the folder cannot be made, using it still tells us so in the log
-      // rather than losing the call.
-      return join(root, 'realtime-voice-chat');
+    } catch (error) {
+      throw voiceStorageError(root, error);
     }
   }
 

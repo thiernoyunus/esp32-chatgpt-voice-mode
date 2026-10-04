@@ -24,7 +24,8 @@
  * process cannot hear it, and neither can a caption.
  */
 
-import { existsSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
+import { voiceStorageRoot } from './voice-storage';
 
 import { z } from 'zod';
 
@@ -440,26 +441,11 @@ async function readListenerConfiguration(arguments_: readonly string[]): Promise
   };
 }
 
-/**
- * The folder the Codex engine is started in.
- *
- * This is not where a voice chat opens - each chat gets its own dated folder.
- * It only has to exist. Spawning the engine with a working directory that does
- * not exist fails as "spawn ... ENOENT", which reads like a missing binary, and
- * a stale folder once left the service restarting in a loop with the device
- * unable to connect. Fall back to this checkout and say so instead.
- */
+/** Start Codex in the same storage folder used for new voice chats. */
 function engineWorkingDirectory(): string {
-  const configured =
-    process.env.VOICEMODE_CODEX_CWD?.trim() || process.env.VOICEMODE_CODEX_ROOT?.trim();
-  if (configured !== undefined && configured.length > 0) {
-    if (existsSync(configured)) return configured;
-    console.error(
-      'Codex working directory ' + configured + ' does not exist; starting Codex in ' +
-        process.cwd() + ' instead.',
-    );
-  }
-  return process.cwd();
+  const root = voiceStorageRoot();
+  mkdirSync(root, { recursive: true });
+  return root;
 }
 
 /**
@@ -687,7 +673,13 @@ export async function runListener(
   // none of them can run before this line, because Bun.serve returns as soon
   // as the port is bound and nothing else runs until this function yields.
   const codexReady = codexClient.start();
-  await codexReady;
+  try {
+    await codexReady;
+  } catch (error) {
+    server.stop(true);
+    codexClient.close();
+    throw error;
+  }
   console.log('Codex app-server ready.');
 
   const stop = (): void => {
