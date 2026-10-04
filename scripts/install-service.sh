@@ -22,7 +22,7 @@ fi
 # Machine-specific Codex settings are passed through from this shell rather
 # than committed, so nobody else inherits one person's model or plugin list.
 PASSTHROUGH=""
-for name in VOICEMODE_CODEX_MODEL VOICEMODE_CODEX_DISABLE_MCP VOICEMODE_CODEX_BIN; do
+for name in VOICEMODE_CODEX_MODEL VOICEMODE_CODEX_DISABLE_MCP VOICEMODE_CODEX_BIN VOICEMODE_CODEX_ROOT; do
   eval "value=\${$name:-}"
   if [ -n "$value" ]; then
     PASSTHROUGH="$PASSTHROUGH

@@ -12,6 +12,14 @@ import {
   isLoopbackAddress,
   planDeviceMessage,
 } from '../listener';
+import { buildRecentChatList, decideThreadReuse, mergeRecentChatLists, resolveVoiceModelSelection } from '../codex';
+
+it('uses the current Luna model when the device saved the retired Luna model', () => {
+  const catalog = [{ model: 'gpt-6-luna', displayName: 'Luna', defaultReasoningEffort: 'low', supportedReasoningEffortList: ['low'] }];
+  const selection = resolveVoiceModelSelection('gpt-5.6-luna', catalog);
+  expect(selection.kind).toBe('resolved');
+  if (selection.kind === 'resolved') expect(selection.entry.model).toBe('gpt-6-luna');
+});
 
 const OFFER = JSON.stringify({
   type: 'realtime_offer',
@@ -162,11 +170,49 @@ describe('voice events on their way to the device', () => {
       models: [{ id: 'gpt-5.6-luna', name: 'Luna' }],
       selectedModel: 'gpt-5.6-luna',
       threadId: 'thread-1',
-      chats: [{ id: 'thread-1', name: 'Desk voice chat' }],
+      chats: [{ id: 'thread-1', name: 'Desk voice chat', folder: 'Coding & Apps' }],
     });
     expect(serverToDeviceMessageSchema.parse(JSON.parse(encoded)).type).toBe(
       'realtime_answer',
     );
+  });
+
+  it('keeps the Codex sidebar folder beside each chat', () => {
+    const chats = buildRecentChatList({
+      data: [
+        {
+          id: 'section-chat',
+          name: 'A sectioned chat',
+          cwd: '/Users/example/desk-voice',
+          section: { name: 'Islamic Studies & Arabic' },
+        },
+        {
+          id: 'folder-chat',
+          name: 'A chat without a section',
+          cwd: '/Users/example/desk-voice',
+          section: null,
+        },
+      ],
+    });
+    expect(chats).toEqual([
+      { id: 'section-chat', name: 'A sectioned chat', folder: 'Islamic Studies & Arabic' },
+      { id: 'folder-chat', name: 'A chat without a section', folder: 'desk-voice' },
+    ]);
+  });
+
+  it('fills missing folder labels without duplicating chats', () => {
+    expect(
+      mergeRecentChatLists(
+        [{ id: 'one', name: 'One' }],
+        [
+          { id: 'one', name: 'One', folder: 'Coding & Apps' },
+          { id: 'two', name: 'Two', folder: 'Work & Operations' },
+        ],
+      ),
+    ).toEqual([
+      { id: 'one', name: 'One', folder: 'Coding & Apps' },
+      { id: 'two', name: 'Two', folder: 'Work & Operations' },
+    ]);
   });
 
   it('accepts what the app-server actually sends', () => {
@@ -227,5 +273,44 @@ describe('what a call can honestly claim', () => {
     call.noteError();
     expect(call.describe()).toContain('reported an error');
     expect(call.snapshot().facts.has('answer_returned')).toBe(false);
+  });
+});
+
+describe('a second offer from the desk device', () => {
+  it('continues the chat the device already opened when nothing ever came up', () => {
+    expect(
+      decideThreadReuse({
+        previousThreadId: 'chat-1',
+        previousCallCameUp: false,
+        requestedThreadId: undefined,
+      }),
+    ).toBe('chat-1');
+  });
+
+  it('opens a new chat once a call has actually been running', () => {
+    expect(
+      decideThreadReuse({
+        previousThreadId: 'chat-1',
+        previousCallCameUp: true,
+        requestedThreadId: undefined,
+      }),
+    ).toBeNull();
+  });
+
+  it('leaves a chat the caller named alone', () => {
+    expect(
+      decideThreadReuse({
+        previousThreadId: 'chat-1',
+        previousCallCameUp: false,
+        requestedThreadId: 'chat-9',
+      }),
+    ).toBeNull();
+    expect(
+      decideThreadReuse({
+        previousThreadId: null,
+        previousCallCameUp: false,
+        requestedThreadId: undefined,
+      }),
+    ).toBeNull();
   });
 });

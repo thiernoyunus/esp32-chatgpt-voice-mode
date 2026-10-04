@@ -24,6 +24,8 @@
  * process cannot hear it, and neither can a caption.
  */
 
+import { existsSync } from 'node:fs';
+
 import { z } from 'zod';
 
 import { codexBridgeMessageSchema, type CodexBridgeMessage } from './codex-events';
@@ -62,6 +64,50 @@ const realtimeStopSchema = z.object({
   type: z.literal('realtime_stop'),
   requestId: z.string().min(1),
 });
+
+/**
+ * Repair the device's WebRTC offer before Codex sees it.
+ *
+ * The offer esp_peer produces is missing things every browser sends, and the
+ * service answers as though they were there:
+ *
+ *   - it offers profile `SAVP` while the answer comes back `SAVPF`. The F is
+ *     feedback - the RTCP channel carrying loss reports and bandwidth
+ *     estimates. WebRTC requires it; without it the sender has no way to learn
+ *     that its audio is not arriving.
+ *   - no `a=rtcp-fb` lines, which follows from the profile.
+ *   - no `a=fmtp` for Opus, so no in-band forward error correction.
+ *
+ * A sender with no feedback and no estimate has nothing to react to, which is
+ * what a call carrying only comfort noise on a healthy transport looks like.
+ * This touches codec negotiation only - never ICE, DTLS, the fingerprint or
+ * the candidates.
+ *
+ * ponytail: patching SDP in flight works around an offer we cannot change on
+ * the device without a flash. If it helps, the real fix belongs on the device.
+ */
+export function repairDeviceOffer(sdp: string): string {
+  const opusPayload = sdp.match(/^a=rtpmap:(\d+) opus\/48000/mi)?.[1];
+  if (opusPayload === undefined) {
+    return sdp;
+  }
+  const repaired: string[] = [];
+  for (const line of sdp.split(/\r?\n/)) {
+    if (line.startsWith('m=audio ') && line.includes('UDP/TLS/RTP/SAVP ')) {
+      repaired.push(line.replace('UDP/TLS/RTP/SAVP ', 'UDP/TLS/RTP/SAVPF '));
+      continue;
+    }
+    repaired.push(line);
+    // Anchored to the rtpmap so the additions land inside the audio section
+    // wherever else the device chooses to put things.
+    if (line.startsWith(`a=rtpmap:${opusPayload} opus/48000`)) {
+      repaired.push(`a=fmtp:${opusPayload} minptime=10;useinbandfec=1`);
+      repaired.push(`a=rtcp-fb:${opusPayload} transport-cc`);
+      repaired.push(`a=rtcp-fb:${opusPayload} nack`);
+    }
+  }
+  return repaired.join('\r\n');
+}
 
 /** What to do with one message the device sent us. */
 export type DeviceMessagePlan =
@@ -390,8 +436,30 @@ async function readListenerConfiguration(arguments_: readonly string[]): Promise
     port,
     hostname: process.env.VOICEMODE_HOST ?? '0.0.0.0',
     deviceToken,
-    workingDirectory: process.env.VOICEMODE_CODEX_CWD ?? process.cwd(),
+    workingDirectory: engineWorkingDirectory(),
   };
+}
+
+/**
+ * The folder the Codex engine is started in.
+ *
+ * This is not where a voice chat opens - each chat gets its own dated folder.
+ * It only has to exist. Spawning the engine with a working directory that does
+ * not exist fails as "spawn ... ENOENT", which reads like a missing binary, and
+ * a stale folder once left the service restarting in a loop with the device
+ * unable to connect. Fall back to this checkout and say so instead.
+ */
+function engineWorkingDirectory(): string {
+  const configured =
+    process.env.VOICEMODE_CODEX_CWD?.trim() || process.env.VOICEMODE_CODEX_ROOT?.trim();
+  if (configured !== undefined && configured.length > 0) {
+    if (existsSync(configured)) return configured;
+    console.error(
+      'Codex working directory ' + configured + ' does not exist; starting Codex in ' +
+        process.cwd() + ' instead.',
+    );
+  }
+  return process.cwd();
 }
 
 /**
@@ -516,6 +584,12 @@ export async function runListener(
         console.log(
           `Voice offer ${offer.requestId}: ${offer.sdp.length} bytes of SDP, voice "${offer.voice ?? 'default'}".`,
         );
+        const repairedSdp = repairDeviceOffer(offer.sdp);
+        if (repairedSdp !== offer.sdp) {
+          console.log(
+            `Offer repaired: SAVP->SAVPF + Opus fmtp/rtcp-fb (${offer.sdp.length} -> ${repairedSdp.length} bytes).`,
+          );
+        }
         // Codex takes about twenty seconds to come up, and the device can dial
         // in before then. Waiting here turns a lost first call into a slow one.
         void codexReady
@@ -524,7 +598,7 @@ export async function runListener(
             {
               type: 'realtime_offer',
               requestId: offer.requestId,
-              sdp: offer.sdp,
+              sdp: repairedSdp,
               model: offer.model,
               threadId: offer.threadId,
               temporary: offer.temporary,

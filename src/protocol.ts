@@ -62,7 +62,13 @@ export const serverToDeviceMessageSchema = z.discriminatedUnion('type', [
     selectedModel: z.string().min(1).max(128).optional(),
     threadId: z.string().min(1).max(64).optional(),
     chats: z
-      .array(z.object({ id: z.string().min(1).max(64), name: z.string().min(1).max(60) }))
+      .array(
+        z.object({
+          id: z.string().min(1).max(64),
+          name: z.string().min(1).max(60),
+          folder: z.string().min(1).max(60).optional(),
+        }),
+      )
       .max(20)
       .optional(),
   }),
