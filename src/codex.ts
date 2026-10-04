@@ -17,6 +17,7 @@ import {
 import { readRealtimeActivity, ConnectorMetadataCache } from './activity';
 import { forwardActivityIcon, resolveIconPixels } from './icons';
 import { voiceStorageRoot, voiceStorageError } from './voice-storage';
+import { releaseVoiceChat } from './voice-release';
 
 const CONFIGURED_CODEX_EXECUTABLE =
   '/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex';
@@ -48,8 +49,8 @@ const RECENT_CHAT_LIST_SIZE = 20;
  *                                start, since every one of them delays the
  *                                first call after a restart.
  */
-function buildCodexOverrides(): string[] {
-  const overrides = ['-c', 'model_reasoning_effort="low"'];
+export function buildCodexOverrides(): string[] {
+  const overrides = ['-c', 'model_reasoning_effort="low"', '-c', 'thread_unload_delay_secs=0'];
   const model = process.env.VOICEMODE_CODEX_MODEL;
   if (model !== undefined && model.length > 0) {
     overrides.push('-c', `model="${model}"`);
@@ -1089,14 +1090,6 @@ export type ActiveRealtimeSession = {
   // A fresh voice chat has no title in Codex until we set one, so the first
   // thing the user says becomes the name. Resumed chats keep their name.
   needsName: boolean;
-  // What the user actually said, in order. A call carries speech as realtime
-  // items, and Codex only counts a chat as a chat once its log holds a real
-  // turn, so until this is handed over the chat stays out of the sidebar.
-  spokenTurnList: string[];
-  // How much of that speech has already been handed to the agent. The first
-  // hand-off happens while the call is still live so the chat appears in the
-  // sidebar mid-call, the way the phone app's voice chats do.
-  handedOverSpeechCount: number;
   // Speech that has not finished yet, per speaker. The saved timeline only
   // holds finished segments, so an open chat needs these to show words while
   // they are still being spoken.
@@ -1217,8 +1210,6 @@ export class CodexAppServerClient {
       ephemeral: request.temporary === true,
       liveSessionSeen: false,
       needsName: false,
-      spokenTurnList: [],
-      handedOverSpeechCount: 0,
       liveSpeech: { user: '', assistant: '' },
       onError,
       onTranscript,
@@ -1451,44 +1442,7 @@ export class CodexAppServerClient {
     if (activeSession.threadId === null) {
       return;
     }
-    this.#handOffSpokenTurn(activeSession);
     await this.#releaseThread(activeSession.threadId);
-  }
-
-  /**
-   * Give the chat an ordinary turn holding what the user has said so far.
-   *
-   * Codex builds the sidebar by reading each chat's log, and a log only counts
-   * as a chat once it holds a real turn - the bookkeeping the desktop writes
-   * when an agent turn runs. A voice call writes realtime items instead, so a
-   * desk chat stayed invisible in Recents however often the bridge told the
-   * desktop to refresh. Handing the speech over as turns is what the phone app
-   * and the desktop's own voice chats do, and it is why they appear there.
-   *
-   * Called twice per call: once when the user first says something, so the chat
-   * shows up mid-call, and once at the end for whatever was said afterwards.
-   * Only the speech that has not been sent yet goes into each turn.
-   *
-   * ponytail: two agent turns per call at most, priced in tokens and written
-   * replies the user never hears. A per-request handoff would be the phone
-   * app's shape; do that if two replies per call is the wrong trade.
-   */
-  #handOffSpokenTurn(session: ActiveRealtimeSession): void {
-    const threadId = session.threadId;
-    if (threadId === null || session.ephemeral) return;
-    const spoken = session.spokenTurnList
-      .slice(session.handedOverSpeechCount)
-      .join('\n')
-      .trim();
-    session.handedOverSpeechCount = session.spokenTurnList.length;
-    if (spoken.length === 0) return;
-    void this.#request('turn/start', {
-      threadId,
-      input: [{ type: 'text', text: spoken }],
-    }).then(() => {
-      this.#desktopConversationBridge.invalidate();
-      this.#desktopConversationBridge.publish(threadId);
-    }).catch(() => undefined);
   }
 
   /**
@@ -1499,11 +1453,10 @@ export class CodexAppServerClient {
    * of Recents until the call ended, while the phone app shows its voice chats
    * as soon as they start. Empty turns do not count and a marker with no words
    * does, so this sends the one thing that is true at the start of every call.
-   * Whatever is said afterwards goes over as its own turns.
+   * Speech is saved in the realtime timeline; hang-up starts no extra turn.
    *
    * ponytail: one extra agent turn at the start of each call, which the agent
-   * answers with a short line nobody asked for. Both this and
-   * #handOffSpokenTurn go away if the desktop ever lists voice chats itself.
+   * answers with a short line nobody asked for. This marker can go away if the desktop lists empty voice chats itself.
    */
   #markCallStarted(session: ActiveRealtimeSession, threadId: string): void {
     void this.#request('turn/start', {
@@ -1522,24 +1475,12 @@ export class CodexAppServerClient {
     }).catch(() => undefined);
   }
 
-  /**
-   * End the call AND let go of the chat.
-   *
-   * Codex takes an exclusive lock on a chat the moment it is started, and only
-   * drops it once nothing is listening and the chat has sat idle. `thread/start`
-   * subscribes this connection automatically, so without an explicit
-   * unsubscribe the idle timer never even begins and the lock is held until
-   * this process exits. That lock is what makes the desktop app say the chat is
-   * open in another app, and what makes archiving fail with "already has an
-   * active writer".
-   *
-   * Unsubscribing does not release the lock there and then - it starts the
-   * unload timer, which is about a minute. Both calls are best effort: a failed
-   * release must never surface as a failed hang-up.
-  */
+  /** Stop voice before dropping the subscription so Codex can release the chat. */
   async #releaseThread(threadId: string): Promise<void> {
-    await this.#request('thread/realtime/stop', { threadId }).catch(() => undefined);
-    await this.#request('thread/unsubscribe', { threadId }).catch(() => undefined);
+    const startedAt = Date.now();
+    if (await releaseVoiceChat((method, params) => this.#request(method, params), threadId)) {
+      console.log(`Voice chat released: ${threadId} in ${Date.now() - startedAt} ms.`);
+    }
   }
 
   close(): void {
@@ -1712,7 +1653,6 @@ export class CodexAppServerClient {
           }
         }
         if (!activeSession.ephemeral && parsedTranscript.data.role === 'user') {
-          activeSession.spokenTurnList.push(parsedTranscript.data.text);
           setStateDatabasePreviewIfEmpty(
             parsedTranscript.data.threadId,
             buildChatNameFromSpeech(parsedTranscript.data.text) ?? parsedTranscript.data.text,
@@ -2175,8 +2115,7 @@ export class CodexAppServerClient {
       this.#lastFailedSession = activeSession;
     }
     if (threadId !== null) {
-      this.#handOffSpokenTurn(activeSession);
-      void this.#releaseThread(threadId).finally(() => {
+        void this.#releaseThread(threadId).finally(() => {
         this.#desktopConversationBridge.invalidate();
         this.#desktopConversationBridge.publish(threadId);
       });

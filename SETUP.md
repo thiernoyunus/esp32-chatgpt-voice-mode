@@ -238,6 +238,17 @@ To keep a custom folder, grant the background service access using macOS Privacy
 & Security. Do not disable macOS protection. Custom absolute paths remain supported
 through `VOICEMODE_CODEX_ROOT` (or the older `VOICEMODE_CODEX_CWD`).
 
+### Archiving after a voice call
+
+The companion asks its Codex process to release idle chats without the default
+waiting period. Ending a call stops voice and unsubscribes from the chat; it no
+longer starts a second text response from everything spoken during the call.
+Saved speech remains in the voice timeline.
+
+The log prints `Voice chat released` when Codex accepts the release. The desktop
+can then archive once Codex finishes closing the chat. This is not a promise to
+interrupt genuine work still running in that chat. Release errors are logged.
+
 ## When it breaks
 
 `.claude/skills/desk-voice/SKILL.md` in this repository is a table of symptom,
