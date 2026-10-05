@@ -604,6 +604,9 @@ export async function runListener(
         }
 
         const offer = plan.offer;
+        // Codex has one voice session. A new offer replaces a call even if its stop was lost.
+        activeCalls.clear();
+        callSockets.clear();
         const call = new DirectVoiceCallLog(offer.requestId);
         activeCalls.set(offer.requestId, call);
         callSockets.set(offer.requestId, socket);
