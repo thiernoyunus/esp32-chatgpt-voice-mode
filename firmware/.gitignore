@@ -1,0 +1,27 @@
+tmp/
+components/
+managed_components/
+build/
+build-codex-voice-check/
+dist/
+.vscode/
+.devcontainer/
+sdkconfig.old
+sdkconfig
+dependencies.lock
+.env
+releases/
+main/assets/lang_config.h
+main/mmap_generate_emoji.h
+.DS_Store
+.cache
+*.pyc
+*.bin
+mmap_generate_*.h
+.clangd
+
+# Machine-local build config (may contain secrets)
+sdkconfig.defaults.local
+
+# Local device diagnostics can contain conversation text.
+/log.xiaozhi.*.txt

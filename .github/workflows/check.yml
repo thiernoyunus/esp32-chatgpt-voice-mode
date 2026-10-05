@@ -1,0 +1,38 @@
+# Typechecks the listener and runs its tests. Releases and the actual service
+# install are separate; this only answers "is the code still sound?".
+name: Check
+
+on:
+  # This repo is a fork, so a fork's automatic triggers stay off until Actions
+  # is enabled once from the Actions tab. A manual run is the way to get the
+  # check to run before that.
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths-ignore:
+      - '**.md'
+      - 'documentation/**'
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Typecheck and tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          # Matches the version in package.json's packageManager field.
+          bun-version: 1.3.13
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck and test
+        run: bun run check

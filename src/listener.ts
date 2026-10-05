@@ -25,6 +25,7 @@
  */
 
 import { mkdirSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { voiceStorageRoot } from './voice-storage';
 
 import { z } from 'zod';
@@ -39,6 +40,7 @@ import {
 import { CodexAppServerClient, describeRealtimeFailure } from './codex';
 import { DeviceToolBridge, handleControlRequest } from './controls';
 import { parseDevelopmentVariableMap } from './vars';
+import { ListenerHealth } from './health';
 
 const DEFAULT_PORT = 8790;
 
@@ -50,6 +52,7 @@ const DEVICE_PATH_PREFIX = '/agents/voicemode/';
 // handler - because anything that can reach it can turn the device's screen
 // off and read what is on it.
 const CONTROL_PATH = '/mcp';
+const DEVICES_PATH = '/devices';
 
 const realtimeOfferSchema = z.object({
   type: z.literal('realtime_offer'),
@@ -411,20 +414,27 @@ type DeviceSocket = {
   send(text: string): unknown;
 };
 
-async function readListenerConfiguration(arguments_: readonly string[]): Promise<ListenerConfiguration> {
-  const environmentFilePath = process.env.VOICEMODE_ENV_FILE ?? '.dev.vars';
-  const variableMap = parseDevelopmentVariableMap(
-    await Bun.file(environmentFilePath).text(),
-  );
-  const deviceToken =
-    process.env.VOICEMODE_DEVICE_SECRET ??
-    variableMap.get('DEVICE_SHARED_SECRET') ??
-    '';
+export async function readDeviceToken(environment: NodeJS.ProcessEnv = process.env): Promise<string> {
+  let deviceToken = environment.VOICEMODE_DEVICE_SECRET;
+  if (deviceToken === undefined) {
+    let contents = '';
+    try {
+      contents = await readFile(environment.VOICEMODE_ENV_FILE ?? '.dev.vars', 'utf8');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    deviceToken = parseDevelopmentVariableMap(contents).get('DEVICE_SHARED_SECRET') ?? '';
+  }
   if (deviceToken.length === 0) {
     throw new Error(
-      'DEVICE_SHARED_SECRET is missing. Set it in .dev.vars, or pass VOICEMODE_DEVICE_SECRET.',
+      'DEVICE_SHARED_SECRET is missing. Run bun run setup, or pass VOICEMODE_DEVICE_SECRET.',
     );
   }
+  return deviceToken;
+}
+
+async function readListenerConfiguration(arguments_: readonly string[]): Promise<ListenerConfiguration> {
+  const deviceToken = await readDeviceToken();
   const portFlagIndex = arguments_.indexOf('--port');
   const port =
     portFlagIndex >= 0 && arguments_[portFlagIndex + 1] !== undefined
@@ -486,7 +496,11 @@ export async function runListener(
   const codexClient = new CodexAppServerClient(configuration.workingDirectory);
 
   const activeCalls = new Map<string, DirectVoiceCallLog>();
+  const callSockets = new Map<string, DeviceSocket>();
   const deviceTools = new DeviceToolBridge();
+  const health = new ListenerHealth();
+  const connectedDevices = new Set<DeviceSocket>();
+  const controlConnections = new Map<DeviceSocket, (text: string) => void>();
 
   // Deliberate order: the port opens first, and only then does Codex start.
   // Codex reaches back to this same port for the device controls, so starting
@@ -496,6 +510,11 @@ export async function runListener(
     port: configuration.port,
     fetch(request, socketServer) {
       const requestUrl = new URL(request.url);
+      if (requestUrl.pathname === '/health') {
+        return health.response(request,
+          isLoopbackAddress(socketServer.requestIP(request)?.address),
+          connectedDevices.size > 0, activeCalls.size);
+      }
       if (requestUrl.pathname === CONTROL_PATH) {
         // The device's controls are reachable from this Mac and nowhere else.
         // The device connection is guarded by a shared token; this one is not,
@@ -506,6 +525,21 @@ export async function runListener(
           return new Response('Forbidden', { status: 403 });
         }
         return handleControlRequest(request, deviceTools);
+      }
+      if (requestUrl.pathname === DEVICES_PATH) {
+        if (!isLoopbackAddress(socketServer.requestIP(request)?.address)) {
+          return new Response('Forbidden', { status: 403 });
+        }
+        if (request.method === 'GET') return Response.json(deviceTools.devices);
+        if (request.method !== 'PUT') return new Response('Method not allowed', { status: 405 });
+        return request.json().then((body: unknown) => {
+          const deviceId = z.object({ deviceId: z.string().min(1) }).safeParse(body);
+          if (!deviceId.success) return new Response('Expected deviceId', { status: 400 });
+          if (!deviceTools.selectDevice(deviceId.data.deviceId)) {
+            return new Response('Device not connected', { status: 404 });
+          }
+          return Response.json(deviceTools.devices);
+        }).catch(() => new Response('Invalid JSON', { status: 400 }));
       }
       if (requestUrl.pathname === '/ota/check') {
         // The device asks for a firmware version on boot. There is none here -
@@ -537,9 +571,11 @@ export async function runListener(
     },
     websocket: {
       open(socket) {
+        connectedDevices.add(socket);
         console.log(`Device "${socket.data.deviceId}" connected on the local network.`);
-        // Its controls become available to Codex for as long as it is here.
-        deviceTools.setDeviceConnection((text) => sendToDevice(socket, text));
+        const send = (text: string) => sendToDevice(socket, text);
+        controlConnections.set(socket, send);
+        deviceTools.connect(socket.data.deviceId, send);
       },
       message(socket, message) {
         if (typeof message !== 'string') {
@@ -551,15 +587,18 @@ export async function runListener(
           return;
         }
         if (plan.kind === 'tool_reply') {
-          deviceTools.acceptReply(plan.reply);
+          const send = controlConnections.get(socket);
+          if (send !== undefined) deviceTools.acceptReply(socket.data.deviceId, send, plan.reply);
           return;
         }
         if (plan.kind === 'voice_stop') {
+          if (callSockets.get(plan.requestId) !== socket) return;
           void codexClient.stopRealtimeSession(plan.requestId);
           const call = activeCalls.get(plan.requestId);
           if (call !== undefined) {
             console.log(`Call ended: ${call.describe()}`);
             activeCalls.delete(plan.requestId);
+            callSockets.delete(plan.requestId);
           }
           return;
         }
@@ -567,8 +606,9 @@ export async function runListener(
         const offer = plan.offer;
         const call = new DirectVoiceCallLog(offer.requestId);
         activeCalls.set(offer.requestId, call);
+        callSockets.set(offer.requestId, socket);
         console.log(
-          `Voice offer ${offer.requestId}: ${offer.sdp.length} bytes of SDP, voice "${offer.voice ?? 'default'}".`,
+          `Voice offer ${offer.requestId} from "${socket.data.deviceId}": ${offer.sdp.length} bytes of SDP, voice "${offer.voice ?? 'default'}".`,
         );
         const repairedSdp = repairDeviceOffer(offer.sdp);
         if (repairedSdp !== offer.sdp) {
@@ -592,6 +632,9 @@ export async function runListener(
             },
             (failureMessage) => {
               call.noteError();
+              health.noteCallFailure(failureMessage);
+              activeCalls.delete(offer.requestId);
+              callSockets.delete(offer.requestId);
               console.error(`Call ${offer.requestId} failed: ${failureMessage}`);
               sendToDevice(socket,
                 encodeServerToDeviceMessage({
@@ -615,6 +658,7 @@ export async function runListener(
             },
           ))
           .then((result) => {
+            health.clearCallFailure();
             call.noteAnswer(result.threadId);
             console.log(
               `Voice answer ${offer.requestId}: chat ${result.threadId}, bridge in ${Date.now() - (call.snapshot().offeredAtMilliseconds)} ms.`,
@@ -640,6 +684,9 @@ export async function runListener(
             call.noteError();
             const failureMessage =
               error instanceof Error ? error.message : String(error);
+            health.noteCallFailure(failureMessage);
+            activeCalls.delete(offer.requestId);
+            callSockets.delete(offer.requestId);
             console.error(`Voice call ${offer.requestId} could not start: ${failureMessage}`);
             sendToDevice(socket,
               encodeServerToDeviceMessage({
@@ -651,12 +698,19 @@ export async function runListener(
           });
       },
       close(socket) {
+        connectedDevices.delete(socket);
         console.log(`Device "${socket.data.deviceId}" disconnected.`);
-        deviceTools.setDeviceConnection(null);
-        for (const call of activeCalls.values()) {
-          void codexClient.stopRealtimeSession(call.requestId);
+        const send = controlConnections.get(socket);
+        if (send !== undefined) {
+          deviceTools.disconnect(socket.data.deviceId, send);
+          controlConnections.delete(socket);
         }
-        activeCalls.clear();
+        for (const [requestId, callSocket] of callSockets) {
+          if (callSocket !== socket) continue;
+          void codexClient.stopRealtimeSession(requestId);
+          callSockets.delete(requestId);
+          activeCalls.delete(requestId);
+        }
       },
     },
   });
@@ -675,7 +729,9 @@ export async function runListener(
   const codexReady = codexClient.start();
   try {
     await codexReady;
+    health.ready();
   } catch (error) {
+    health.failed(error instanceof Error ? error.message : String(error));
     server.stop(true);
     codexClient.close();
     throw error;

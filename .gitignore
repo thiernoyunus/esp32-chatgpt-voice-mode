@@ -2,3 +2,4 @@ node_modules/
 .dev.vars
 *.log
 .DS_Store
+scripts/remote-control-device-key

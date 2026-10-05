@@ -1,0 +1,57 @@
+name: Setup or connection problem
+description: The device or the Mac half will not come up, or they cannot see each other
+title: "[Setup] "
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Two things first:
+
+        1. **Never paste your shared secret, device id, MAC address, or a chat transcript.** They identify your setup.
+        2. Work through [SETUP.md](https://github.com/thiernoyunus/esp32-chatgpt-voice-mode/blob/main/SETUP.md) first - every step has a check.
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Before submitting
+      options:
+        - label: I worked through SETUP.md, and I am not pasting any secret or identifier.
+          required: true
+
+  - type: input
+    id: stage
+    attributes:
+      label: Which step fails
+      description: The SETUP.md step that goes wrong, in its own words.
+      placeholder: ex. Step 3 - the device never appears in the Mac log
+    validations:
+      required: true
+
+  - type: textarea
+    id: mac-log
+    attributes:
+      label: The last lines of the Mac log
+      description: Run the listener in the foreground and paste the last ~20 lines. Remove the secret if it appears.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: health
+    attributes:
+      label: The /health report, if the service runs
+      description: Paste the output of curl -s http://127.0.0.1:8790/health. It carries no chat text, so it is safe to share.
+      render: json
+    validations:
+      required: false
+
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Your macOS version, and the Codex version from SETUP.md.
+      placeholder: ex. macOS 15.3; codex 0.154.0-alpha
+    validations:
+      required: true
+

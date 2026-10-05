@@ -1,0 +1,36 @@
+name: Question
+description: Ask about setting up, operating, or changing the project
+title: "[Question] "
+labels: ['question']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For a broken setup or a misbehaving call, the other forms ask for the
+        logs that get a faster answer.
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Before submitting
+      options:
+        - label: I looked in the README, SETUP.md, and the documentation folder first.
+          required: true
+
+  - type: input
+    id: where
+    attributes:
+      label: Where you are
+      description: Which half, and what works so far.
+      placeholder: ex. The Mac half runs; the firmware is not flashed yet
+    validations:
+      required: true
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+      description: State it plainly. Do not include secrets, device ids, or chat text.
+    validations:
+      required: true
+
