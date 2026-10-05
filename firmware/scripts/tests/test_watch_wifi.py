@@ -29,6 +29,7 @@ helper = source[start:end]
 
 program = """
 #include <cassert>
+#include <cstdint>
 #include <cstring>
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wnull-character"

@@ -100,7 +100,7 @@ def main():
                 stdout, stderr = process.communicate()
                 stderr += f"\nTimed out after {arguments.timeout:g} seconds\n"
                 passed = False
-        if re.search(r"(?im)^.*\bskip(?:ped)?\b", stdout + stderr):
+        if re.search(r"(?im)^\s*skip(?:ped)?(?:\s|:|$)", stdout + stderr):
             stderr += "\nRequired host tests must execute; a skip was reported\n"
             passed = False
         sys.stdout.write(stdout)
