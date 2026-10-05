@@ -1,0 +1,25 @@
+{
+    "manufacturer": "waveshare",
+    "type": "esp32-s3-touch-amoled-2.06",
+    "target": "esp32s3",
+    "builds": [
+        {
+            "name": "esp32-s3-touch-amoled-2.06",
+            "sdkconfig_append": [
+                "CONFIG_VOICEMODE_CODEX_VOICE=y",
+                "CONFIG_VOICEMODE_DEVICE_ID=\"watch\"",
+                "CONFIG_USE_DEVICE_AEC=y",
+                "CONFIG_WAKE_WORD_DISABLED=y",
+                "CONFIG_USE_MICRO_WAKE_WORD=n",
+                "CONFIG_SR_WN_WN9_NIHAOXIAOZHI_TTS=n",
+                "CONFIG_USE_DEFAULT_MESSAGE_STYLE=y",
+                "CONFIG_PM_ENABLE=y",
+                "CONFIG_PM_POWER_DOWN_CPU_IN_LIGHT_SLEEP=n",
+                "CONFIG_FREERTOS_USE_TICKLESS_IDLE=y",
+                "CONFIG_MMAP_FILE_NAME_LENGTH=32",
+                "CONFIG_FLASH_DEFAULT_ASSETS=y",
+                "CONFIG_ESPTOOLPY_FLASHSIZE_32MB=y"
+            ]
+        }
+    ]
+}

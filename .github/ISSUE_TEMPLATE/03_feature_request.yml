@@ -1,0 +1,47 @@
+name: Feature request
+description: Propose a change to either half of the project
+title: "[Feature] "
+labels: ['enhancement']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The two repositories are one wire contract. Say whether your change is
+        Mac side, device side, or both.
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched the existing requests and did not find this one.
+          required: true
+
+  - type: dropdown
+    id: side
+    attributes:
+      label: Which half
+      options:
+        - The Mac listener
+        - The device firmware
+        - Both - the contract between them
+        - Documentation
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What is awkward or missing today, and why it matters.
+    validations:
+      required: true
+
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Requested behaviour
+      description: What you would like to happen instead.
+    validations:
+      required: true
+

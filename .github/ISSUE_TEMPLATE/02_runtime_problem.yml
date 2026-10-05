@@ -1,0 +1,65 @@
+name: A call or the device misbehaves
+description: A call fails or comes up silent, or the device's screen or controls do not work
+title: "[Call] "
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Captions are not sound.** A call that transcribes both sides and stays
+        silent is a known failure. Read the README's "What it cannot do yet"
+        list and documentation/why-a-call-goes-silent.md before filing, so we do
+        not re-chase what is already ruled out.
+
+        Never paste your shared secret, a device id, a MAC address, or a chat
+        transcript.
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Before submitting
+      options:
+        - label: I read the known-limits list and the silent-call notes, and I am not pasting secrets or identifiers.
+          required: true
+
+  - type: dropdown
+    id: symptom
+    attributes:
+      label: What happens
+      options:
+        - The call never starts
+        - The call connects but there is no sound
+        - Speech or captions stop partway
+        - The screen, touch, or volume controls misbehave
+        - The background service stops or restarts
+        - Something else
+    validations:
+      required: true
+
+  - type: textarea
+    id: call-log
+    attributes:
+      label: The Mac log lines for the call
+      description: Paste the block from "Device ... connected" to "Call ended", plus the /health report.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: device-log
+    attributes:
+      label: The device log, if you can capture it
+      description: With the device on USB, use the firmware's serial capture. Remove wifi names and addresses.
+      render: shell
+    validations:
+      required: false
+
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: macOS, Codex, and the firmware version on the device or in its startup log.
+      placeholder: ex. macOS 15.3; codex 0.154.0-alpha; firmware 2.7.4
+    validations:
+      required: true
+

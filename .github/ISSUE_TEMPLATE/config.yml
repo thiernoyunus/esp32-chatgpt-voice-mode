@@ -1,0 +1,12 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Setting up from nothing
+    url: https://github.com/thiernoyunus/esp32-chatgpt-voice-mode/blob/main/SETUP.md
+    about: The whole path, device and Mac, with a check after every step.
+  - name: Why a call goes silent
+    url: https://github.com/thiernoyunus/esp32-chatgpt-voice-mode/blob/main/documentation/why-a-call-goes-silent.md
+    about: Read this before filing "call connects but no sound" - most theories are already ruled out.
+  - name: Releasing and matching the two halves
+    url: https://github.com/thiernoyunus/esp32-chatgpt-voice-mode/blob/main/documentation/releasing.md
+    about: How a matching pair of releases is tagged.
+

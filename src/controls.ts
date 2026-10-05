@@ -44,6 +44,8 @@ type DeviceToolOutcome =
   | { readonly ok: false; readonly reason: string };
 
 type PendingCall = {
+  readonly deviceId: string;
+  readonly send: (text: string) => void;
   readonly settle: (outcome: DeviceToolOutcome) => void;
   readonly timeoutHandle: ReturnType<typeof setTimeout>;
 };
@@ -56,31 +58,52 @@ type PendingCall = {
  */
 export class DeviceToolBridge {
   readonly #pendingCalls = new Map<number, PendingCall>();
+  readonly #connections = new Map<string, (text: string) => void>();
   #nextRequestId = 1;
-  #sendToDevice: ((text: string) => void) | null = null;
+  #activeDeviceId: string | null = null;
 
-  /** Called when a device connects or disconnects. */
-  setDeviceConnection(send: ((text: string) => void) | null): void {
-    this.#sendToDevice = send;
-    if (send === null) {
-      // A device that has gone away will never answer, so release every caller
-      // now instead of making each one wait out its own timeout.
-      for (const [requestId, pending] of this.#pendingCalls) {
-        clearTimeout(pending.timeoutHandle);
-        pending.settle({ ok: false, reason: 'the device disconnected mid-call' });
-        this.#pendingCalls.delete(requestId);
-      }
+  connect(deviceId: string, send: (text: string) => void): void {
+    const previous = this.#connections.get(deviceId);
+    if (previous !== undefined) this.disconnect(deviceId, previous);
+    this.#connections.set(deviceId, send);
+    this.#activeDeviceId ??= deviceId;
+  }
+
+  disconnect(deviceId: string, send: (text: string) => void): void {
+    if (this.#connections.get(deviceId) !== send) return;
+    this.#connections.delete(deviceId);
+    for (const [requestId, pending] of this.#pendingCalls) {
+      if (pending.send !== send) continue;
+      clearTimeout(pending.timeoutHandle);
+      pending.settle({ ok: false, reason: 'the device disconnected mid-call' });
+      this.#pendingCalls.delete(requestId);
+    }
+    if (this.#activeDeviceId === deviceId) {
+      this.#activeDeviceId = this.#connections.keys().next().value ?? null;
     }
   }
 
+  get devices(): { activeDeviceId: string | null; connectedDeviceIds: string[] } {
+    return {
+      activeDeviceId: this.#activeDeviceId,
+      connectedDeviceIds: [...this.#connections.keys()],
+    };
+  }
+
+  selectDevice(deviceId: string): boolean {
+    if (!this.#connections.has(deviceId)) return false;
+    this.#activeDeviceId = deviceId;
+    return true;
+  }
+
   get isDeviceConnected(): boolean {
-    return this.#sendToDevice !== null;
+    return this.#connections.size > 0;
   }
 
   /** Hand one reply from the device to whoever is waiting for it. */
-  acceptReply(reply: DeviceMcpReply): void {
+  acceptReply(deviceId: string, send: (text: string) => void, reply: DeviceMcpReply): void {
     const pending = this.#pendingCalls.get(reply.payload.id);
-    if (pending === undefined) {
+    if (pending === undefined || pending.deviceId !== deviceId || pending.send !== send) {
       // Almost always a reply that arrived after its caller gave up.
       return;
     }
@@ -88,8 +111,8 @@ export class DeviceToolBridge {
     this.#pendingCalls.delete(reply.payload.id);
     console.log(
       reply.payload.error === undefined
-        ? `Device answered #${reply.payload.id}: ${JSON.stringify(reply.payload.result)}`
-        : `Device refused #${reply.payload.id}: ${reply.payload.error.message}`,
+        ? `Device "${deviceId}" answered #${reply.payload.id}.`
+        : `Device "${deviceId}" refused #${reply.payload.id}: ${reply.payload.error.message}`,
     );
     pending.settle(
       reply.payload.error === undefined
@@ -102,17 +125,24 @@ export class DeviceToolBridge {
   async call(
     toolName: string,
     argumentRecord: Record<string, unknown>,
+    requestedDeviceId?: string,
   ): Promise<DeviceToolOutcome> {
-    const send = this.#sendToDevice;
-    if (send === null) {
+    const deviceId = requestedDeviceId ?? this.#activeDeviceId;
+    if (deviceId === null) {
       return { ok: false, reason: 'the device is not connected' };
+    }
+    const send = this.#connections.get(deviceId);
+    if (send === undefined) {
+      return { ok: false, reason: requestedDeviceId === undefined
+        ? 'the device is not connected'
+        : `device "${requestedDeviceId}" is not connected` };
     }
     const requestId = this.#nextRequestId;
     this.#nextRequestId += 1;
     // Logged on both sides: without this a tool call that never reaches the
     // device looks exactly like one the device ignored, and the assistant
     // inventing an answer looks like either.
-    console.log(`Asking the device: ${toolName} ${JSON.stringify(argumentRecord)}`);
+    console.log(`Asking device "${deviceId}": ${toolName} ${JSON.stringify(argumentRecord)}`);
 
     return new Promise<DeviceToolOutcome>((resolve) => {
       const timeoutHandle = setTimeout(() => {
@@ -123,7 +153,7 @@ export class DeviceToolBridge {
         });
       }, DEVICE_TOOL_TIMEOUT_MILLISECONDS);
 
-      this.#pendingCalls.set(requestId, { settle: resolve, timeoutHandle });
+      this.#pendingCalls.set(requestId, { deviceId, send, settle: resolve, timeoutHandle });
 
       try {
         send(
@@ -206,11 +236,21 @@ function readImageContent(
  */
 export function createDeviceControlServer(bridge: DeviceToolBridge): McpServer {
   const server = new McpServer(
-    { name: 'desk', version: '1.0.0' },
+    { name: 'voicemode-devices', version: '1.1.0' },
     {
       instructions:
-        'Controls for the physical voice device on this desk. Check its status before changing volume or brightness, because both are set to an absolute value rather than nudged.',
+        'Controls for connected voice devices. List devices first when the user names a watch. Check its status before changing volume or brightness, because both are set to an absolute value rather than nudged.',
     },
+  );
+
+  server.registerTool(
+    'list_devices',
+    {
+      title: 'List connected devices',
+      description: 'List connected voice devices and show which one receives calls without a device ID.',
+      inputSchema: {},
+    },
+    async () => ({ content: [{ type: 'text', text: JSON.stringify(bridge.devices) }] }),
   );
 
   server.registerTool(
@@ -219,9 +259,9 @@ export function createDeviceControlServer(bridge: DeviceToolBridge): McpServer {
       title: 'Device status',
       description:
         'The device\'s current state: speaker volume, screen brightness, battery and network. Call this first when asked to change the volume or brightness, since those take an absolute 0-100 value.',
-      inputSchema: {},
+      inputSchema: { device_id: z.string().min(1).optional() },
     },
-    async () => describeOutcome(await bridge.call('self.get_device_status', {})),
+    async ({ device_id }) => describeOutcome(await bridge.call('self.get_device_status', {}, device_id)),
   );
 
   server.registerTool(
@@ -230,10 +270,10 @@ export function createDeviceControlServer(bridge: DeviceToolBridge): McpServer {
       title: 'Set speaker volume',
       description:
         'Set the device speaker volume to an absolute level from 0 to 100. To make it "louder" or "quieter", read device_status first and adjust from the value it reports.',
-      inputSchema: { volume: z.number().int().min(0).max(100) },
+      inputSchema: { volume: z.number().int().min(0).max(100), device_id: z.string().min(1).optional() },
     },
-    async ({ volume }) =>
-      describeOutcome(await bridge.call('self.audio_speaker.set_volume', { volume })),
+    async ({ volume, device_id }) =>
+      describeOutcome(await bridge.call('self.audio_speaker.set_volume', { volume }, device_id)),
   );
 
   server.registerTool(
@@ -242,10 +282,10 @@ export function createDeviceControlServer(bridge: DeviceToolBridge): McpServer {
       title: 'Set screen brightness',
       description:
         'Set the device screen brightness to an absolute level from 0 to 100. Read device_status first for relative changes.',
-      inputSchema: { brightness: z.number().int().min(0).max(100) },
+      inputSchema: { brightness: z.number().int().min(0).max(100), device_id: z.string().min(1).optional() },
     },
-    async ({ brightness }) =>
-      describeOutcome(await bridge.call('self.screen.set_brightness', { brightness })),
+    async ({ brightness, device_id }) =>
+      describeOutcome(await bridge.call('self.screen.set_brightness', { brightness }, device_id)),
   );
 
   server.registerTool(
@@ -254,10 +294,10 @@ export function createDeviceControlServer(bridge: DeviceToolBridge): McpServer {
       title: 'Capture the screen',
       description:
         "A JPEG of what the device's screen is showing right now. Takes a few seconds, because the device encodes and uploads it while a call is running.",
-      inputSchema: { quality: z.number().int().min(1).max(100).default(80) },
+      inputSchema: { quality: z.number().int().min(1).max(100).default(80), device_id: z.string().min(1).optional() },
     },
-    async ({ quality }) =>
-      describeOutcome(await bridge.call('self.screen.capture', { quality })),
+    async ({ quality, device_id }) =>
+      describeOutcome(await bridge.call('self.screen.capture', { quality }, device_id)),
   );
 
   return server;

@@ -12,14 +12,15 @@ describe('asking the device to do something', () => {
   it('sends the tool call and settles when the device answers', async () => {
     const sent: string[] = [];
     const bridge = new DeviceToolBridge();
-    bridge.setDeviceConnection((text) => sent.push(text));
+    const send = (text: string) => { sent.push(text); };
+    bridge.connect('desk', send);
 
     const pending = bridge.call('self.audio_speaker.set_volume', { volume: 30 });
     const call = readSentCall(sent);
     expect(call.name).toBe('self.audio_speaker.set_volume');
     expect(call.arguments).toEqual({ volume: 30 });
 
-    bridge.acceptReply({
+    bridge.acceptReply('desk', send, {
       type: 'mcp',
       payload: { jsonrpc: '2.0', id: call.id, result: true },
     });
@@ -36,10 +37,11 @@ describe('asking the device to do something', () => {
   it('passes the device’s own refusal back rather than inventing one', async () => {
     const sent: string[] = [];
     const bridge = new DeviceToolBridge();
-    bridge.setDeviceConnection((text) => sent.push(text));
+    const send = (text: string) => { sent.push(text); };
+    bridge.connect('desk', send);
 
     const pending = bridge.call('self.screen.capture', { quality: 80 });
-    bridge.acceptReply({
+    bridge.acceptReply('desk', send, {
       type: 'mcp',
       payload: {
         jsonrpc: '2.0',
@@ -54,9 +56,10 @@ describe('asking the device to do something', () => {
     // Without this the caller waits out the full twenty-second ceiling for a
     // device that is demonstrably gone, and the assistant just goes quiet.
     const bridge = new DeviceToolBridge();
-    bridge.setDeviceConnection(() => {});
+    const send = () => {};
+    bridge.connect('desk', send);
     const pending = bridge.call('self.get_device_status', {});
-    bridge.setDeviceConnection(null);
+    bridge.disconnect('desk', send);
     expect(await pending).toEqual({
       ok: false,
       reason: 'the device disconnected mid-call',
@@ -66,7 +69,8 @@ describe('asking the device to do something', () => {
   it('gives each call its own id so two in flight cannot be confused', async () => {
     const sent: string[] = [];
     const bridge = new DeviceToolBridge();
-    bridge.setDeviceConnection((text) => sent.push(text));
+    const send = (text: string) => { sent.push(text); };
+    bridge.connect('desk', send);
 
     const first = bridge.call('self.get_device_status', {});
     const firstId = readSentCall(sent).id;
@@ -75,11 +79,11 @@ describe('asking the device to do something', () => {
     expect(secondId).not.toBe(firstId);
 
     // Answer them out of order: the wrong pairing is the bug this catches.
-    bridge.acceptReply({
+    bridge.acceptReply('desk', send, {
       type: 'mcp',
       payload: { jsonrpc: '2.0', id: secondId, result: 'second' },
     });
-    bridge.acceptReply({
+    bridge.acceptReply('desk', send, {
       type: 'mcp',
       payload: { jsonrpc: '2.0', id: firstId, result: 'first' },
     });
@@ -89,12 +93,41 @@ describe('asking the device to do something', () => {
 
   it('ignores a reply that arrives after its caller gave up', () => {
     const bridge = new DeviceToolBridge();
-    bridge.setDeviceConnection(() => {});
+    const send = () => {};
+    bridge.connect('desk', send);
     expect(() =>
-      bridge.acceptReply({
+      bridge.acceptReply('desk', send, {
         type: 'mcp',
         payload: { jsonrpc: '2.0', id: 999, result: true },
       }),
     ).not.toThrow();
+  });
+
+  it('routes to the named watch and ignores replies from the other watch', async () => {
+    const deskSent: string[] = [];
+    const watchSent: string[] = [];
+    const bridge = new DeviceToolBridge();
+    const desk = (text: string) => { deskSent.push(text); };
+    const watch = (text: string) => { watchSent.push(text); };
+    bridge.connect('desk', desk);
+    bridge.connect('watch', watch);
+    const pending = bridge.call('self.screen.capture', { quality: 80 }, 'watch');
+    expect(deskSent).toHaveLength(0);
+    expect(watchSent).toHaveLength(1);
+    const id = readSentCall(watchSent).id;
+    bridge.acceptReply('desk', desk, { type: 'mcp', payload: { jsonrpc: '2.0', id, result: 'wrong' } });
+    bridge.disconnect('desk', desk);
+    bridge.acceptReply('watch', watch, { type: 'mcp', payload: { jsonrpc: '2.0', id, result: 'right' } });
+    expect(await pending).toEqual({ ok: true, result: 'right' });
+  });
+
+  it('keeps the selected watch when another device connects', () => {
+    const bridge = new DeviceToolBridge();
+    bridge.connect('watch', () => {});
+    bridge.connect('desk', () => {});
+    expect(bridge.devices.activeDeviceId).toBe('watch');
+    expect(bridge.selectDevice('desk')).toBe(true);
+    expect(bridge.devices.activeDeviceId).toBe('desk');
+    expect(bridge.selectDevice('missing')).toBe(false);
   });
 });

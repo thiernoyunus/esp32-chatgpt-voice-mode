@@ -1,6 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import { createConnection, type Socket } from 'node:net';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -18,9 +18,9 @@ import { readRealtimeActivity, ConnectorMetadataCache } from './activity';
 import { forwardActivityIcon, resolveIconPixels } from './icons';
 import { voiceStorageRoot, voiceStorageError } from './voice-storage';
 import { releaseVoiceChat } from './voice-release';
+import { classifyVoiceFailure } from './failures';
+import { resolveCodexExecutable } from './codex-executable';
 
-const CONFIGURED_CODEX_EXECUTABLE =
-  '/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex';
 const CODEX_APP_SERVER_REQUEST_TIMEOUT_MILLISECONDS = 45_000;
 // Catalog fetch is bounded well under the 30s realtime_offer readiness window so
 // a slow model/list cannot stall the device setup; one failed fetch only
@@ -67,6 +67,7 @@ const CODEX_DEVELOPER_INSTRUCTION_LIST = [
   'You are the local Codex agent behind the voice device on this desk.',
   'Answer the user directly in clear English. Keep the spoken answer short and conversational; do not use Markdown.',
   'Use the MCP servers and plugins configured on this Mac when they fit the request. Do not claim an action succeeded unless the tool confirms it.',
+  'When asked to check email without naming an account, review recent messages in every connected inbox and summarize the useful ones instead of stopping to ask which inbox first.',
   // Without naming it, the model answers questions about the device from
   // nowhere: asked its volume it will state a number it never looked up, and
   // asked to change it will say it did. Both were observed.
@@ -574,13 +575,9 @@ class CodexAppServerTimeoutError extends Error {
   }
 }
 
-// The app-server reports a spent ChatGPT quota as a bare retry/429 string, which
-// reaches the desk screen verbatim and reads like a device fault. Name the one
-// cause the user can act on; everything else passes through untouched.
+// Keep device messages short and actionable without forwarding private error data.
 export function describeRealtimeFailure(message: string): string {
-  return /429|too many requests|rate.?limit|usage limit/i.test(message)
-    ? 'ChatGPT usage limit reached. Voice returns when it resets.'
-    : message;
+  return classifyVoiceFailure(message).message;
 }
 
 type DesktopIpcRecord = Record<string, unknown>;
@@ -1103,6 +1100,7 @@ export type ActiveRealtimeSession = {
 
 
 export class CodexAppServerClient {
+  readonly #markedCallStartedThreadIdSet = new Set<string>();
   readonly #process: ChildProcessWithoutNullStreams;
   readonly #readlineInterface: Interface;
   readonly #pendingRequestMap = new Map<number, PendingCodexRequest>();
@@ -1117,7 +1115,6 @@ export class CodexAppServerClient {
   #lastFailedSession: ActiveRealtimeSession | null = null;
   // Chats already given their opening turn, so a redial into the same chat does
   // not write a second one.
-  readonly #markedCallStartedThreadIdSet = new Set<string>();
   #voiceModelCatalog: VoiceModelCatalogEntry[] | null = null;
   #voiceModelCatalogPromise: Promise<VoiceModelCatalogEntry[] | null> | null = null;
   #voiceModelCatalogRetryAfterMilliseconds = 0;
@@ -1129,9 +1126,7 @@ export class CodexAppServerClient {
   readonly #desktopConversationBridge = new DesktopConversationBridge();
 
   constructor(readonly workingDirectory: string) {
-    const codexExecutable =
-      process.env.VOICEMODE_CODEX_BIN ??
-      (existsSync(CONFIGURED_CODEX_EXECUTABLE) ? CONFIGURED_CODEX_EXECUTABLE : 'codex');
+    const codexExecutable = resolveCodexExecutable().path;
     const appServerArguments = [
       'app-server',
       '--listen',
@@ -1245,20 +1240,12 @@ export class CodexAppServerClient {
       // dialling again into it.
       const reuseCandidate = previousSession ?? this.#lastFailedSession;
       this.#lastFailedSession = null;
-      const reusedThreadId = decideThreadReuse({
+      let reusedThreadId = decideThreadReuse({
         previousThreadId: reuseCandidate?.threadId ?? null,
         previousCallCameUp: reuseCandidate?.liveSessionSeen === true,
         requestedThreadId: request.threadId,
       });
-      if (reusedThreadId !== null) {
-        // The chat stays; only the half-open transport is closed before the
-        // new offer is handed to the same chat.
-        console.log(
-          `Repeating offer: reusing chat ${reusedThreadId} from an attempt that never connected.`,
-        );
-        await this.#request('thread/realtime/stop', { threadId: reusedThreadId })
-          .catch(() => undefined);
-      } else if (previousSession !== null && previousSession.threadId !== null) {
+      if (reusedThreadId === null && previousSession !== null && previousSession.threadId !== null) {
         await this.#releaseThread(previousSession.threadId);
       }
       // Reject unknown choices before opening a new thread.
@@ -1286,6 +1273,18 @@ export class CodexAppServerClient {
               reasoningEffort: modelSelection.resolution.reasoningEffort,
             }
           : undefined;
+      if (reusedThreadId !== null) {
+        // Releasing a failed call unloads its chat. Reopen it before retrying;
+        // if it is gone, let the normal fresh-chat path take over.
+        if (await this.#resumeThread(reusedThreadId, modelOverrides) === null) {
+          console.log(`Previous voice chat ${reusedThreadId} is unavailable; opening a new chat.`);
+          reusedThreadId = null;
+        } else {
+          console.log(`Repeating offer: reusing chat ${reusedThreadId} from an attempt that never connected.`);
+          await this.#request('thread/realtime/stop', { threadId: reusedThreadId })
+            .catch(() => undefined);
+        }
+      }
       // Resume the requested chat when the device names one; otherwise open a
       // new chat. Only an explicit `temporary` flag keeps it out of Codex.
       const resumedThreadId =
@@ -1311,11 +1310,11 @@ export class CodexAppServerClient {
         // from one the sidebar simply failed to show.
         console.log('This call is a temporary chat: it will not appear in Codex.');
       }
-      // A chat this call opened is not in the sidebar yet, and Codex only lists
-      // a chat once it holds a turn carrying a user message. There is no way to
-      // write one without starting a turn - an empty turn, a goal and a queued
-      // message were each tried and each starts an agent turn - so the chat
-      // appears the moment the call connects at the price of one short turn.
+      activeSession.needsName = reusedThreadId === null
+        ? resumedThreadId === null && request.temporary !== true
+        : reuseCandidate?.needsName === true;
+      // Codex lists a chat after it holds a user turn. Keep the startup marker
+      // so a fresh voice chat has a record the app can reopen.
       if (
         !activeSession.ephemeral &&
         resumedThreadId === null &&
@@ -1327,9 +1326,6 @@ export class CodexAppServerClient {
       // A reused chat is still waiting for a name if the attempt that opened it
       // never got as far as hearing anything, so keep that intent rather than
       // leaving it as the "Desk voice chat" placeholder forever.
-      activeSession.needsName = reusedThreadId === null
-        ? resumedThreadId === null && request.temporary !== true
-        : reuseCandidate?.needsName === true;
       if (activeSession.needsName) {
         // Codex titles a thread from its first turn, and a voice call's first
         // turn is an internal handoff message — that XML would become the
@@ -1445,27 +1441,11 @@ export class CodexAppServerClient {
     await this.#releaseThread(activeSession.threadId);
   }
 
-  /**
-   * Put the chat in the sidebar the moment the call connects.
-   *
-   * Codex lists a chat only once its log holds a turn carrying a user message,
-   * and a voice call writes realtime items instead - so a desk chat stayed out
-   * of Recents until the call ended, while the phone app shows its voice chats
-   * as soon as they start. Empty turns do not count and a marker with no words
-   * does, so this sends the one thing that is true at the start of every call.
-   * Speech is saved in the realtime timeline; hang-up starts no extra turn.
-   *
-   * ponytail: one extra agent turn at the start of each call, which the agent
-   * answers with a short line nobody asked for. This marker can go away if the desktop lists empty voice chats itself.
-   */
   #markCallStarted(session: ActiveRealtimeSession, threadId: string): void {
     void this.#request('turn/start', {
       threadId,
       input: [{ type: 'text', text: 'Voice call started.' }],
     }).then(async () => {
-      // The agent titles a chat from its first user message, which would name
-      // every desk chat "Voice call started." Hold the placeholder name until
-      // the user says something and names it themselves.
       if (session.needsName) {
         await this.#request('thread/name/set', { threadId, name: buildDeskCallTitle(null) })
           .catch(() => undefined);
@@ -1566,13 +1546,15 @@ export class CodexAppServerClient {
       const generation = ++this.#activityGeneration;
       const isCurrent = () => this.#activeRealtimeSession === realtimeSession &&
         this.#activityGeneration === generation;
-      realtimeSession.onTranscript({
+      // A new chat's registration turn is not a user request. Keep its
+      // Thinking/Answering events off the watch until the first user sentence.
+      if (!realtimeSession.needsName) realtimeSession.onTranscript({
         type: 'realtime_status',
         requestId: realtimeSession.requestId,
         caption: activity.caption,
         icon: activity.icon,
       });
-      if (activity.connectorId !== undefined) {
+      if (!realtimeSession.needsName && activity.connectorId !== undefined) {
         const pixels = this.#connectorMetadataCache.resolve(activity.connectorId).then((metadata) => {
           const url = metadata?.iconUrlDark ?? metadata?.iconUrl;
           return url && isCurrent() ? resolveIconPixels(url) : null;

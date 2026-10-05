@@ -3,8 +3,9 @@
 Notes from chasing the one failure that keeps coming back: a call that connects,
 transcribes both sides perfectly, and produces no sound from the speaker.
 
-Read this before changing anything in the signalling path, because most of the
-obvious theories are already ruled out below.
+These are observations from earlier investigations, not exclusions for every
+future silent call. Compare the current negotiation and device logs before
+choosing a cause.
 
 ## Where the voice actually travels
 
@@ -26,32 +27,32 @@ relays text only; the audio goes from the device to that service directly.
 
 Three consequences:
 
-1. Neither this listener nor the Codex app-server can drop or repair the voice.
-   Neither sees a single audio packet.
-2. A session with captions and no voice is **not** a signalling fault. The
-   transport is demonstrably fine, because the captions are using it.
+1. The listener does not handle audio packets, but its call setup and audio
+   negotiation can affect whether the device receives sound.
+2. Captions show that text events arrived. They do **not** prove that audio was
+   negotiated correctly or that the audio path works.
 3. The device is the only party that can report the fault, which is what its
    readiness links and its stall message do.
 
-## What has been ruled out
+## What earlier runs showed
 
-**It is not ICE, and nothing is split across two transports.** The answer
+**The inspected answers shared a transport.** The answer
 bundles audio and events onto one transport with one shared set of ICE
 credentials. The `Answer transports:` line in the log confirms this per call —
 look for `shared-transport=true`.
 
-**It is not the opening greeting.** Suppressing the greeting entirely was tried,
+**Removing the opening greeting did not fix those runs.** Suppressing the greeting entirely was tried,
 on the theory that the first response was the one being lost. Sessions still
 came up with captions and no voice, so the opening response is not the trigger.
 The greeting is back on.
 
-**It is not the codec or the direction.** The `Answer audio:` line records what
+**Check the codec and direction on each run.** The `Answer audio:` line records what
 the answer negotiated. A healthy call shows `sendrecv` and `opus/48000/2`. This
 line exists precisely so a silent call can be compared against a good one
 instead of guessed at.
 
-**It is not the local network path.** The same fault appeared on the old
-Cloudflare route, so it predates the direct connection entirely.
+**The symptom predates the direct route.** It also appeared on the old
+Cloudflare route. That history does not rule out a network fault in a new run.
 
 ## What is actually observed
 

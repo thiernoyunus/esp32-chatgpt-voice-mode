@@ -5,6 +5,8 @@
   "packageManager": "bun@1.3.13",
   "scripts": {
     "start": "bun run src/listener.ts",
+    "setup": "bun run scripts/setup.ts",
+    "doctor": "bun run scripts/doctor.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "check": "bun run typecheck && bun run test"
