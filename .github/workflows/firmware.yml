@@ -50,15 +50,6 @@ jobs:
           grep -q '^CONFIG_USE_DEVICE_AEC=y$' sdkconfig
           grep -q '^CONFIG_USE_DEFAULT_MESSAGE_STYLE=y$' sdkconfig
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: xiaozhi_${{ matrix.board }}_${{ github.sha }}
-          path: |
-            firmware/build/xiaozhi.bin
-            firmware/build/merged-binary.bin
-          if-no-files-found: error
-
       # The display test uses fonts fetched by the firmware build above.
       - name: Host tests
         shell: bash
