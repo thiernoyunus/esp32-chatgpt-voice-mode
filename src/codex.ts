@@ -1460,6 +1460,8 @@ export class CodexAppServerClient {
     const startedAt = Date.now();
     if (await releaseVoiceChat((method, params) => this.#request(method, params), threadId)) {
       console.log(`Voice chat released: ${threadId} in ${Date.now() - startedAt} ms.`);
+      this.#desktopConversationBridge.invalidate(threadId);
+      this.#desktopConversationBridge.publish(threadId);
     }
   }
 
