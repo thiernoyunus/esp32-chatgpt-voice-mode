@@ -14,6 +14,9 @@ test('new and resumed calls keep reasoning independent of the model, with device
     expect(voiceReasoningEffort('high', 'medium')).toBe('high');
     expect(voiceReasoningEffort(undefined, 'medium')).toBe('medium');
     expect(voiceReasoningEffort(undefined, null)).toBe('low');
+    process.env.VOICEMODE_CODEX_REASONING_EFFORT = '';
+    expect(voiceReasoningEffort(undefined, 'high')).toBe('high');
+    expect(voiceReasoningEffort(undefined, null)).toBe('low');
     process.env.VOICEMODE_CODEX_REASONING_EFFORT = 'xhigh';
     expect(voiceReasoningEffort(undefined, 'medium')).toBe('xhigh');
     expect(voiceReasoningEffort('high', 'medium')).toBe('high');

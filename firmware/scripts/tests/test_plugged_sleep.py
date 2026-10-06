@@ -87,6 +87,6 @@ with tempfile.TemporaryDirectory(prefix='plugged-sleep-') as directory:
     source = Path(directory) / 'check.cc'
     binary = Path(directory) / 'check'
     source.write_text(program)
-    subprocess.run(['clang++', *compiler_flags(), '-std=c++17', str(source), '-o', str(binary)], check=True)
+    subprocess.run(['c++', *compiler_flags(), '-std=c++17', str(source), '-o', str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
 print('PASS: plugged-in watches stay awake, full batteries stay awake, unplugged watches sleep.')

@@ -372,18 +372,27 @@ type StateChatRow = {
   readonly project_name: string | null;
 };
 
+export function truncateWatchChatLabel(text: string): string {
+  let label = '';
+  for (const character of text) {
+    if (Buffer.byteLength(label + character, 'utf8') > 60) break;
+    label += character;
+  }
+  return label;
+}
+
 function folderLabel(
   sectionName: string | null | undefined,
   projectName: string | null | undefined,
   cwd: string | null | undefined,
 ): string | undefined {
   const section = sectionName?.trim();
-  if (section) return section.slice(0, 60);
+  if (section) return truncateWatchChatLabel(section);
   const project = projectName?.trim();
-  if (project) return project.slice(0, 60);
+  if (project) return truncateWatchChatLabel(project);
   const pathParts = cwd?.split('/').filter((part) => part.length > 0);
   const folder = pathParts?.at(-1)?.trim();
-  return folder === undefined || folder.length === 0 ? undefined : folder.slice(0, 60);
+  return folder === undefined || folder.length === 0 ? undefined : truncateWatchChatLabel(folder);
 }
 
 function readStateDatabaseChatList(): VoiceChatChoice[] {
@@ -416,7 +425,7 @@ function readStateDatabaseChatList(): VoiceChatChoice[] {
       if (label.length === 0) continue;
       chatList.push({
         id: row.id,
-        name: label.slice(0, 60),
+        name: truncateWatchChatLabel(label),
         folder: folderLabel(row.section_name, row.project_name, row.cwd),
       });
     }
@@ -512,7 +521,7 @@ export function buildRecentChatList(rawResponse: unknown): VoiceChatChoice[] {
     seenIdSet.add(thread.id);
     chatList.push({
       id: thread.id,
-      name: label.slice(0, 60),
+      name: truncateWatchChatLabel(label),
       folder: folderLabel(thread.section?.name, undefined, thread.cwd),
     });
     if (chatList.length >= RECENT_CHAT_LIST_SIZE) break;
@@ -520,8 +529,15 @@ export function buildRecentChatList(rawResponse: unknown): VoiceChatChoice[] {
   return chatList;
 }
 
+export function clearPendingVoiceRequests(requests: Map<string, { params: DesktopIpcRecord }>, threadId?: string): void {
+  if (threadId === undefined) { requests.clear(); return; }
+  for (const [id, request] of requests) {
+    if (request.params.threadId === threadId) requests.delete(id);
+  }
+}
+
 export function voiceReasoningEffort(device: string | undefined, configured: unknown): string {
-  return device ?? process.env.VOICEMODE_CODEX_REASONING_EFFORT ??
+  return device ?? (process.env.VOICEMODE_CODEX_REASONING_EFFORT || undefined) ??
     (typeof configured === 'string' && configured.length > 0 ? configured : 'low');
 }
 
@@ -1172,6 +1188,7 @@ export class CodexAppServerClient {
         this.#request('app/read', { appIds: [connectorId], includeTools: false }, timeoutMilliseconds),
     );
     this.#process.on('exit', (code) => {
+      clearPendingVoiceRequests(this.#serverRequests);
       const error = new Error(`Codex app-server stopped${code === null ? '' : ` (${code})`}.`);
       for (const pendingRequest of this.#pendingRequestMap.values()) {
         clearTimeout(pendingRequest.timeout);
@@ -1487,6 +1504,7 @@ export class CodexAppServerClient {
   async #releaseThread(threadId: string): Promise<void> {
     const startedAt = Date.now();
     if (await releaseVoiceChat((method, params) => this.#request(method, params), threadId)) {
+      clearPendingVoiceRequests(this.#serverRequests, threadId);
       console.log(`Voice chat released: ${threadId} in ${Date.now() - startedAt} ms.`);
       this.#desktopConversationBridge.invalidate(threadId);
       this.#desktopConversationBridge.publish(threadId);

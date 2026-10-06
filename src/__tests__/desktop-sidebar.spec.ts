@@ -1,10 +1,11 @@
 import { expect, test } from 'bun:test';
+import { voiceChatListSchema } from '../protocol';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { createServer, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { DesktopConversationBridge, desktopConversationDates, desktopVoiceTurns, voiceRequestResponse } from '../codex';
+import { DesktopConversationBridge, desktopConversationDates, desktopVoiceTurns, voiceRequestResponse, clearPendingVoiceRequests, truncateWatchChatLabel } from '../codex';
 
 test('Codex answers are preserved and cannot approve a different kind of request', () => {
   expect(voiceRequestResponse('thread-follower-command-approval-decision', { decision: 'accept' },
@@ -148,4 +149,25 @@ test('only explicitly saved chats send a targeted desktop refresh', async () => 
     await new Promise<void>((resolve) => server.close(() => resolve()));
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+
+test('released chats drop only their pending requests; a dead process drops all', () => {
+  const requests = new Map([['one', { params: { threadId: 'first' } }], ['two', { params: { threadId: 'second' } }]]);
+  clearPendingVoiceRequests(requests, 'first');
+  expect([...requests.keys()]).toEqual(['two']);
+  clearPendingVoiceRequests(requests);
+  expect(requests.size).toBe(0);
+});
+
+test('watch chat names preserve whole characters within the firmware byte limit', () => {
+  for (const text of ['😀'.repeat(21), 'م'.repeat(60), '漢'.repeat(60), 'a'.repeat(61)]) {
+    const label = truncateWatchChatLabel(text);
+    expect(Buffer.byteLength(label, 'utf8')).toBeLessThanOrEqual(60);
+    expect(text.startsWith(label)).toBe(true);
+    expect(label).not.toContain('�');
+  }
+  expect(truncateWatchChatLabel('😀'.repeat(21))).toBe('😀'.repeat(15));
+  expect(voiceChatListSchema.safeParse([{ id: 'chat', name: '😀'.repeat(21) }]).success).toBe(false);
+  expect(voiceChatListSchema.safeParse([{ id: 'chat', name: truncateWatchChatLabel('😀'.repeat(21)), folder: truncateWatchChatLabel('漢'.repeat(60)) }]).success).toBe(true);
 });

@@ -60,8 +60,10 @@ This change does not establish complete phone/desktop parity:
 
 ## Validation
 
-Server: `bun run check` (217 passing). AMOLED 2.06 firmware build, including the latest picker changes, completed in the active unified checkout and produced `build/xiaozhi.bin`; the generated profile enables Codex Voice and the default display style. The AMOLED 2.06 device (`28:84:85:b4:f3:90`) was flashed on October 6; all written data passed hash verification. It booted and reconnected. With the serial reader closed, USB remained present for over 90 seconds idle while charging, and device status still reported brightness 100. A real voice call and unplugged battery behavior remain to be checked physically. A full 32 MB pre-flash backup is stored locally. Firmware sender:
+Server: `bun run check` (219 passing). AMOLED 2.06 firmware build, including the latest picker changes, completed in the active unified checkout and produced `build/xiaozhi.bin`; the generated profile enables Codex Voice and the default display style. The AMOLED 2.06 device (`28:84:85:b4:f3:90`) was flashed on October 6; all written data passed hash verification. It booted and reconnected. With the serial reader closed, USB remained present for over 90 seconds idle while charging, and device status still reported brightness 100. A real voice call and unplugged battery behavior remain to be checked physically. A full 32 MB pre-flash backup is stored locally. Firmware sender:
 `python3 firmware/scripts/tests/test_voice_reasoning.py` after firmware dependencies are
 available. `test_voice_messages.py` also checks picker refresh, stale replies and empty-list clearing. Both checks reuse the existing cJSON and host toolchain helpers.
 
 Plugged-in sleep check: `python3 firmware/scripts/tests/test_plugged_sleep.py` compiles the actual cable detector and screen-sleep function and checks cable insertion, full-battery power, repeated idle attempts and unplugging.
+
+Review follow-up: host checks use the existing `c++` compiler; empty reasoning environment values inherit Codex; pending approvals are cleared after successful chat release or process exit; chat and folder labels are shortened on whole characters to the firmware’s 60-byte UTF-8 limit.
