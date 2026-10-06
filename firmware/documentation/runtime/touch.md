@@ -3,7 +3,8 @@
 Each watch has a touch screen and a physical button. Its board-specific touch
 task under `main/boards/waveshare/` feeds samples to the shared display code,
 which checks the controls on the current page. The 1.85C has a round 360×360
-screen; the 2.06 AMOLED centers that 360×360 interface on its 410×502 screen.
+screen. The 2.06 AMOLED is 410×502, and every page of its interface - the
+call screen included - is laid out for that whole panel.
 
 ## Touch behavior
 
@@ -14,6 +15,14 @@ screen; the 2.06 AMOLED centers that 360×360 interface on its 410×502 screen.
 | Keyboard | Tap keys to edit; Cancel returns without saving; Next/Join submits the field |
 | Voice | Tap the orb to open a call, or tap the on-screen mute/end controls during a call |
 | Confirmation | Tap Sí or No; taps outside the two buttons do nothing |
+| Anywhere else | Swipe sideways to go home, the same trip the call screen's arrow makes |
+
+A sideways swipe is 50px of travel with more of it across than down
+(`voice_geometry::IsHomeSwipe`, covered by static asserts in that header).
+Vertical is left to the lists, which scroll that way. On the call screen the
+swipe ends the call first, because the hang-up button only exists there. The
+keyboard is left out: a drag across the key caps is a slip, not a request to
+throw away half-typed text.
 
 ## Design notes
 

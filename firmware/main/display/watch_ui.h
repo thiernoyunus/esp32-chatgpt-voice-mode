@@ -48,6 +48,9 @@ public:
     void Tick(const char* clock, const char* date);
     void SetCallActive(bool active);
     Page page() const { return page_; }
+    // The call screen's arrow and a sideways swipe both mean this, so they
+    // both call it.
+    void GoHome();
     // Reusable text input. FieldKind chooses submit label, max length, secret mode,
     // and the validator. For arbitrary future fields, use FieldKind::Generic.
     enum class FieldKind { Generic, Ssid, Password };
