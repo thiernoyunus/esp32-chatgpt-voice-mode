@@ -55,6 +55,6 @@ jobs:
         shell: bash
         run: |
           source $IDF_PATH/export.sh
-          python -m pip install --disable-pip-version-check pillow
           cd firmware
+          python -m pip install --disable-pip-version-check -r scripts/tests/requirements.txt
           python scripts/tests/run_host_tests.py

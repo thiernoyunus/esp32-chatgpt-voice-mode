@@ -17,17 +17,8 @@ namespace {
 constexpr uint32_t kAccent = 0x10A37F;
 constexpr uint32_t kAmoledText = 0xF4F1FF;
 constexpr uint32_t kAmoledMuted = 0xA9B8C5;
-struct UiPalette { const char* name; uint32_t accent, background, card, selected, border; };
-constexpr UiPalette kUiPalettes[]={
-    {"Cyan", 0x00D8E9, 0x070C11, 0x0C151C, 0x102832, 0x1D3943},
-    {"Lime", 0xB8F500, 0x080D07, 0x111A0D, 0x202C0D, 0x344616},
-    {"Gold", 0xFFD629, 0x100B07, 0x1B160E, 0x312510, 0x493716},
-    {"Rose", 0xFF4FA5, 0x11080E, 0x1B1019, 0x321526, 0x4C2440},
-};
-static_assert(std::size(kUiPalettes)==WatchUi::kThemeCount);
-const UiPalette& Palette(int theme){
-    return kUiPalettes[std::clamp(theme,0,static_cast<int>(std::size(kUiPalettes))-1)];
-}
+using watch_palette::kUiPalettes;
+using watch_palette::Palette;
 // The round screen's geometry, shared with the design mockups: centre, and the
 // radius everything drawn has to stay inside of.
 constexpr int kCenter = 180, kSafeR = 176;
@@ -42,12 +33,8 @@ const char* SleepLabel(int seconds){
     for(const auto& o:kSleepOpts) if(o.seconds==seconds) return o.label;
     return "Custom";
 }
-constexpr const char* kShapeNames[]={"Circle","Pebble","Squircle","Capsule","Triangle","Hexagon","Cloud","Droplet"};
-static_assert(sizeof(kShapeNames)/sizeof(kShapeNames[0])==voice_character::kShapeCount,
-              "a silhouette has no name, or a name has no silhouette");
-constexpr const char* kColourNames[]={"Cream","Grey","Brown","Red","Orange","Amber","Green","Teal","Blue","Violet","Pink"};
-static_assert(sizeof(kColourNames)/sizeof(kColourNames[0])==voice_character::kColorCount,
-              "a colour has no name, or a name has no colour");
+using voice_character::kShapeNames;
+using voice_character::kColourNames;
 /* Straight ahead and expressionless. bloub's NEUTRAL expression is the rest
  * gaze measured off the reference video - a three-quarter view - which at
  * preview size reads as looking off to one side and leaves only one eye
@@ -811,6 +798,14 @@ void WatchUi::Tick(const char* clock,const char* date){
 void WatchUi::SetCallActive(bool active){
     if(active&&!call_active_&&page_==Page::Home)Show(Page::Voice);
     call_active_=active;
+}
+void WatchUi::GoHome(){
+    // Ending the call first is not optional on the call screen: the hang-up
+    // button only exists there, so leaving it on screen would strand the call
+    // with nothing to stop it.
+    if(page_==Page::Voice) Emit(Action::EndCall);
+    Show(Page::Home);
+    Emit(Action::Refresh);
 }
 void WatchUi::ChooseNetwork(const std::string& ssid){
     join_ssid_=ssid;

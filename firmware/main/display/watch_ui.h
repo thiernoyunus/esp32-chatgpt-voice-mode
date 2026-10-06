@@ -1,5 +1,6 @@
 #pragma once
 #include "lvgl_display/lvgl_font.h"
+#include "watch_palette.h"
 #include <lvgl.h>
 #include <functional>
 #include <memory>
@@ -8,7 +9,7 @@
 
 class WatchUi {
 public:
-    static constexpr int kThemeCount = 4;
+    static constexpr int kThemeCount = watch_palette::kThemeCount;
     enum class Page { Home, Voice, Settings, Brightness, Volume, Wifi, Clock, About,
                       CodexSettings, Models, Keyboard, WifiSetup, Sleep, Reasoning,
                       Chats, Voices, Shapes, Colours, Themes };
@@ -47,6 +48,9 @@ public:
     void Tick(const char* clock, const char* date);
     void SetCallActive(bool active);
     Page page() const { return page_; }
+    // The call screen's arrow and a bottom-edge swipe both mean this, so they
+    // both call it.
+    void GoHome();
     // Reusable text input. FieldKind chooses submit label, max length, secret mode,
     // and the validator. For arbitrary future fields, use FieldKind::Generic.
     enum class FieldKind { Generic, Ssid, Password };

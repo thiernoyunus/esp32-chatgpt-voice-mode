@@ -16,6 +16,8 @@
 #include "settings.h"
 #include "lvgl_theme.h"
 #include "lvgl_display.h"
+#include "display/voice_character.h"
+#include "display/watch_palette.h"
 
 #define TAG "MCP"
 
@@ -77,6 +79,43 @@ void McpServer::AddCommonTools() {
     }
 
     auto display = board.GetDisplay();
+    if (display) {
+        AddTool("self.screen.set_character",
+            "Change the character the device wears on the call screen - its shape and its colour. "
+            "Both are optional: name one to change it, leave the other out to keep it. "
+            "Call with neither to hear what it is wearing now. An unrecognised name is refused "
+            "with the full list rather than guessed at.",
+            PropertyList({
+                Property("shape", kPropertyTypeString, std::string("")),
+                Property("colour", kPropertyTypeString, std::string(""))
+            }),
+            [](const PropertyList& properties) -> ReturnValue {
+                auto shape_name = properties["shape"].value<std::string>();
+                auto colour_name = properties["colour"].value<std::string>();
+                int shape = voice_character::IndexOf(voice_character::kShapeNames,
+                                                      voice_character::kShapeCount, shape_name.c_str());
+                int colour = voice_character::IndexOf(voice_character::kColourNames,
+                                                        voice_character::kColorCount, colour_name.c_str());
+                if (!shape_name.empty() && shape < 0) {
+                    return "There is no shape called \"" + shape_name + "\". The shapes are: " +
+                        voice_character::Names(voice_character::kShapeNames, voice_character::kShapeCount) + ".";
+                }
+                if (!colour_name.empty() && colour < 0) {
+                    return "There is no colour called \"" + colour_name + "\". The colours are: " +
+                        voice_character::Names(voice_character::kColourNames, voice_character::kColorCount) + ".";
+                }
+                if (!Application::GetInstance().SetVoiceCharacter(shape, colour)) {
+                    return std::string("This screen does not draw a character, so there was nothing to change.");
+                }
+                Settings s("display", true);
+                int worn_shape = std::clamp(static_cast<int>(s.GetInt("voice_shape", 0)),
+                                            0, voice_character::kShapeCount - 1);
+                int worn_colour = std::clamp(static_cast<int>(s.GetInt("voice_colour", 0)),
+                                              0, voice_character::kColorCount - 1);
+                return std::string("It is now a ") + voice_character::NameOf(voice_character::kShapeNames, worn_shape, voice_character::kShapeCount) +
+                    " in " + voice_character::NameOf(voice_character::kColourNames, worn_colour, voice_character::kColorCount) + ".";
+            });
+    }
     if (display && display->GetTheme() != nullptr) {
         AddTool("self.screen.set_theme",
             "Set the theme of the screen. The theme can be `light` or `dark`.",
@@ -92,6 +131,39 @@ void McpServer::AddCommonTools() {
                     return true;
                 }
                 return false;
+            });
+    }
+
+    if (display) {
+        // Named differently from self.screen.set_theme on purpose. That tool is
+        // the LVGL light/dark object, which barely shows on a watch that draws
+        // its own colours; this is the theme the Themes picker offers and the
+        // one on screen. Two tools with one name is a coin flip for whoever is
+        // picking between them.
+        AddTool("self.screen.set_ui_theme",
+            "Change the watch screen's colour theme - its accent, background and cards. "
+            "This is the theme the Themes picker offers, not a light/dark setting. "
+            "Call with no argument to hear which one is on now. An unrecognised name is "
+            "refused with the full list rather than guessed at.",
+            PropertyList({
+                Property("theme", kPropertyTypeString, std::string(""))
+            }),
+            [](const PropertyList& properties) -> ReturnValue {
+                auto name = properties["theme"].value<std::string>();
+                int theme = watch_palette::IndexOf(watch_palette::kThemeNames,
+                                                   watch_palette::kThemeCount, name.c_str());
+                if (!name.empty() && theme < 0) {
+                    return "There is no theme called \"" + name + "\". The themes are: " +
+                        watch_palette::Names(watch_palette::kThemeNames, watch_palette::kThemeCount) + ".";
+                }
+                if (!Application::GetInstance().SetUiTheme(theme)) {
+                    return std::string("This screen does not draw a themed UI.");
+                }
+                Settings s("display", true);
+                int worn = std::clamp(static_cast<int>(s.GetInt("ui_theme", 0)),
+                                      0, watch_palette::kThemeCount - 1);
+                return std::string("The screen is now on the ") +
+                    watch_palette::NameOf(watch_palette::kThemeNames, worn, watch_palette::kThemeCount) + " theme.";
             });
     }
 

@@ -52,6 +52,9 @@ public:
     virtual void SetVoiceActivity(const char* activity, const char* icon = "none",
                                   const char* pixels = nullptr) { (void)activity; (void)icon; (void)pixels; }
     virtual void SetVoiceModel(const char* name) { (void)name; }
+    // The silhouette and colour worn on the call screen. Both are clamped to
+    // the palette. False when this display cannot draw the character at all.
+    virtual bool SetVoiceCharacter(int shape, int colour) { (void)shape; (void)colour; return false; }
     virtual void ShowVoiceModels(const std::vector<std::string>& names, size_t page) { (void)names; (void)page; }
     virtual void HideVoiceModels() {}
     virtual void FeedTouch(bool pressed, int x, int y) { (void)pressed; (void)x; (void)y; }

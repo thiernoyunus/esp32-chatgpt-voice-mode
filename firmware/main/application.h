@@ -79,6 +79,19 @@ public:
     bool SetDeviceState(DeviceState state);
 
     /**
+     * Save and wear a new call-screen character. Pass -1 for either to leave
+     * that one alone. Shared with the voice tool so a spoken "blue triangle"
+     * and a tap in Settings land on the same saved choice.
+     */
+    bool SetVoiceCharacter(int shape, int colour);
+
+    /**
+     * Save and apply one of the watch screen's themes. Shared with the Themes
+     * picker for the same reason SetVoiceCharacter is shared with its picker.
+     */
+    bool SetUiTheme(int theme);
+
+    /**
      * Schedule a callback to be executed in the main task
      */
     void Schedule(std::function<void()>&& callback);

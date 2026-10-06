@@ -78,6 +78,29 @@ Application::~Application() {
 
 bool Application::SetDeviceState(DeviceState state) { return state_machine_.TransitionTo(state); }
 
+bool Application::SetVoiceCharacter(int shape, int colour) {
+    Settings s("display", true);
+    if (shape >= 0) s.SetInt("voice_shape", std::clamp(shape, 0, voice_character::kShapeCount - 1));
+    if (colour >= 0) s.SetInt("voice_colour", std::clamp(colour, 0, voice_character::kColorCount - 1));
+    // GetInt is int32_t, which is long on xtensa. Say int so std::clamp agrees.
+    const int saved_shape = std::clamp(static_cast<int>(s.GetInt("voice_shape", 0)),
+                                       0, voice_character::kShapeCount - 1);
+    const int saved_colour = std::clamp(static_cast<int>(s.GetInt("voice_colour", 0)),
+                                         0, voice_character::kColorCount - 1);
+    Display* display = Board::GetInstance().GetDisplay();
+    return display != nullptr && display->SetVoiceCharacter(saved_shape, saved_colour);
+}
+
+bool Application::SetUiTheme(int theme) {
+    if (theme < 0) return true;
+    Settings s("display", true);
+    s.SetInt("ui_theme", std::clamp(theme, 0, watch_palette::kThemeCount - 1));
+    // The watch draws its own colours, so changing the saved value is not
+    // enough - the running screen has to be handed the new palette.
+    RefreshWatchInfo();
+    return true;
+}
+
 void Application::Initialize() {
     auto& board = Board::GetInstance();
     SetDeviceState(kDeviceStateStarting);
@@ -1880,26 +1903,17 @@ void Application::OnWatchAction(WatchUi::Action action, int value,
                 break;
             }
             case WatchUi::Action::SelectTheme: {
-                Settings s("display", true);
-                s.SetInt("ui_theme", std::clamp(value, 0, WatchUi::kThemeCount - 1));
+                SetUiTheme(value);
                 break;
             }
             case WatchUi::Action::SelectShape:
-            case WatchUi::Action::SelectColour: {
-                Settings s("display", true);
-                int shape = s.GetInt("voice_shape", 0);
-                int colour = s.GetInt("voice_colour", 0);
-                if (action == WatchUi::Action::SelectShape) {
-                    shape = std::clamp(value, 0, voice_character::kShapeCount - 1);
-                } else {
-                    colour = std::clamp(value, 0, voice_character::kColorCount - 1);
-                }
-                s.SetInt("voice_shape", shape);
-                s.SetInt("voice_colour", colour);
-                if (auto lcd = dynamic_cast<LcdDisplay*>(board.GetDisplay())) lcd->SetVoiceCharacter(shape, colour);
-                pending_watch_notification_ = action == WatchUi::Action::SelectShape ? "Shape saved" : "Colour saved";
+                SetVoiceCharacter(value, -1);
+                pending_watch_notification_ = "Shape saved";
                 break;
-            }
+            case WatchUi::Action::SelectColour:
+                SetVoiceCharacter(-1, value);
+                pending_watch_notification_ = "Colour saved";
+                break;
             case WatchUi::Action::Sleep:
                 if (value != 0 && value != 30 && value != 60 && value != 120 && value != 300) break;
                 screen_sleep_seconds_ = value;
