@@ -1,10 +1,26 @@
 import { expect, test } from 'bun:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { voiceStorageRoot, voiceStorageError } from '../voice-storage';
 
-test('fresh installs keep chat storage outside protected Documents and Desktop', () => {
+test('fresh installs put voice chats beside regular Codex chats', () => {
   expect(voiceStorageRoot({}, '/Users/test')).toBe(
-    '/Users/test/Library/Application Support/ESP32 Voice Mode/chats',
+    '/Users/test/Documents/Codex',
   );
+});
+
+test('new chats follow the Codex projectless task folder when it is customized', () => {
+  const codexHome = mkdtempSync(join(tmpdir(), 'voice-storage-'));
+  try {
+    writeFileSync(join(codexHome, 'config.toml'),
+      '[desktop]\nprojectlessWorkspaceRoot = "/other/codex-chats"\n');
+    expect(voiceStorageRoot({ CODEX_HOME: codexHome }, '/Users/test')).toBe('/other/codex-chats');
+    expect(voiceStorageRoot({ CODEX_HOME: codexHome, VOICEMODE_CODEX_ROOT: '/watch-only' },
+      '/Users/test')).toBe('/watch-only');
+  } finally {
+    rmSync(codexHome, { recursive: true, force: true });
+  }
 });
 
 test('explicit folders stay explicit and ROOT takes precedence over legacy CWD', () => {
