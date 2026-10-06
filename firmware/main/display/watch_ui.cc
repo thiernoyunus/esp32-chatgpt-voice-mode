@@ -633,7 +633,7 @@ void WatchUi::Show(Page page) {
         }break;
     case Page::Reasoning: {
         Header("Reasoning",Page::CodexSettings);Column();
-        const char* levels[]={"Low","Medium","High","XHigh","Max","Ultra"};
+        const char* levels[]={"Default","Low","Medium","High","XHigh","Max","Ultra"};
         for(const auto& level:levels){
             const bool current=info_.reasoning==level;
             Row(level,nullptr,[this,level]{

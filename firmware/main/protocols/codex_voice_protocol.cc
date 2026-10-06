@@ -464,6 +464,16 @@ bool CodexVoiceProtocol::SendSignalOffer(const uint8_t* data, size_t size) {
     if (!model.empty()) {
         cJSON_AddStringToObject(root, "model", model.c_str());
     }
+    // Send the saved reasoning choice independently of the selected model.
+    // Default leaves the choice to Codex on the Mac.
+    Settings codex_settings("codex", false);
+    auto reasoning = codex_settings.GetString("reasoning", "Default");
+    for (auto& letter : reasoning) {
+        if (letter >= 'A' && letter <= 'Z') letter += 'a' - 'A';
+    }
+    if (!reasoning.empty() && reasoning != "default") {
+        cJSON_AddStringToObject(root, "reasoningEffort", reasoning.c_str());
+    }
     // A saved chat id resumes that Codex chat; no id means a new chat. The
     // chat stays visible in Codex unless the user turned on temporary chats.
     const auto chat = settings.GetString("chat", "");
