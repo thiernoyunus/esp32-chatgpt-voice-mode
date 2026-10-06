@@ -1717,8 +1717,8 @@ void LcdDisplay::FeedTouch(bool pressed, int x, int y) {
                        (static_cast<uint32_t>(std::clamp(y, 0, height_ - 1)) << 9) |
                        static_cast<uint32_t>(std::clamp(x, 0, width_ - 1)));
 }
-/* Swiping sideways goes home, the same trip the arrow on the call screen
- * makes. Runs on the LVGL task, with the point LVGL already has, so it needs
+/* Swiping up from the bottom edge goes home, matching the call screen arrow.
+ * Runs on the LVGL task, with the point LVGL already has, so it needs
  * no plumbing back from the board's touch task. */
 void LcdDisplay::TrackSwipe(lv_indev_state_t state, int x, int y) {
     if (state == LV_INDEV_STATE_PRESSED) {
@@ -1732,10 +1732,8 @@ void LcdDisplay::TrackSwipe(lv_indev_state_t state, int x, int y) {
     if (!swipe_pressed_) return;
     swipe_pressed_ = false;
     if (watch_ui_ == nullptr || watch_ui_->page() == WatchUi::Page::Home) return;
-    // Not on the keyboard: a sideways drag across the key caps is a fat-finger
-    // slip, and throwing away half-typed password is not what it was asking for.
-    if (watch_ui_->page() == WatchUi::Page::Keyboard) return;
-    if (!voice_geometry::IsHomeSwipe(x - swipe_start_x_, y - swipe_start_y_)) return;
+    if (!voice_geometry::IsHomeSwipe(swipe_start_y_, height_,
+                                     x - swipe_start_x_, y - swipe_start_y_)) return;
     watch_ui_->GoHome();
 }
 void LcdDisplay::ShowVoicePage() {

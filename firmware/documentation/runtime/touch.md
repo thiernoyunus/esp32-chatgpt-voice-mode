@@ -15,14 +15,13 @@ call screen included - is laid out for that whole panel.
 | Keyboard | Tap keys to edit; Cancel returns without saving; Next/Join submits the field |
 | Voice | Tap the orb to open a call, or tap the on-screen mute/end controls during a call |
 | Confirmation | Tap Sí or No; taps outside the two buttons do nothing |
-| Anywhere else | Swipe sideways to go home, the same trip the call screen's arrow makes |
+| Other screens, including the keyboard | Swipe up from the bottom edge to go home |
 
-A sideways swipe is 50px of travel with more of it across than down
-(`voice_geometry::IsHomeSwipe`, covered by static asserts in that header).
-Vertical is left to the lists, which scroll that way. On the call screen the
-swipe ends the call first, because the hang-up button only exists there. The
-keyboard is left out: a drag across the key caps is a slip, not a request to
-throw away half-typed text.
+Start in the bottom 40px and move upward at least 50px, with more upward than
+sideways travel (`voice_geometry::IsHomeSwipe`, checked by static asserts).
+Upward drags starting elsewhere keep their normal scrolling behavior.
+On the call screen, going home ends the call, matching the back arrow.
+Leaving the keyboard this way does not submit its unfinished text.
 
 ## Design notes
 

@@ -54,16 +54,19 @@ constexpr int kNavSize = 48, kNavTop = 36, kNavSide = 24;
 constexpr int kButtonSize = 56, kButtonTop = 376, kButtonSide = 52;
 }  // namespace amoled_voice
 
-// A sideways flick takes you home, the way swiping up takes you home on a
-// phone. Vertical is left alone: that is how the lists scroll. 50px is a
-// finger's worth of travel, so a tap and its small wobble never count.
+// Start in the bottom 40px and move upward at least 50px.
 constexpr int kHomeSwipePixels = 50;
-constexpr bool IsHomeSwipe(int dx, int dy) {
-    const int across = dx < 0 ? -dx : dx, down = dy < 0 ? -dy : dy;
-    return across >= kHomeSwipePixels && across > down;
+constexpr int kHomeSwipeEdgePixels = 40;
+constexpr bool IsHomeSwipe(int start_y, int height, int dx, int dy) {
+    const int across = dx < 0 ? -dx : dx;
+    return start_y >= height - kHomeSwipeEdgePixels && start_y < height &&
+           dy <= -kHomeSwipePixels && -dy > across;
 }
-static_assert(IsHomeSwipe(60, 4));
-static_assert(IsHomeSwipe(-60, -4));
-static_assert(!IsHomeSwipe(60, 90));  // more down than across: that is a scroll
-static_assert(!IsHomeSwipe(20, 2));   // a tap with a shaky finger
+static_assert(IsHomeSwipe(490, 502, 4, -60));
+static_assert(IsHomeSwipe(350, 360, -4, -60));
+static_assert(!IsHomeSwipe(300, 502, 4, -60)); // ordinary list scrolling
+static_assert(!IsHomeSwipe(490, 502, 60, 4)); // sideways
+static_assert(!IsHomeSwipe(490, 502, 4, 60)); // downward
+static_assert(!IsHomeSwipe(490, 502, 4, -20)); // short movement
+static_assert(!IsHomeSwipe(490, 502, 90, -60)); // mostly sideways
 }  // namespace voice_geometry

@@ -45,7 +45,7 @@ protected:
     // The arrow and the three dots, in the order they are created.
     lv_obj_t* voice_nav_buttons_[2] = {nullptr, nullptr};
     int voice_orb_size_ = 0;
-    // Where the current finger went down, for the sideways swipe home.
+    // Where the current finger went down, for the bottom-edge swipe home.
     int swipe_start_x_ = 0, swipe_start_y_ = 0;
     bool swipe_pressed_ = false;
     lv_obj_t* voice_state_caption_ = nullptr;

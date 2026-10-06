@@ -48,7 +48,7 @@ public:
     void Tick(const char* clock, const char* date);
     void SetCallActive(bool active);
     Page page() const { return page_; }
-    // The call screen's arrow and a sideways swipe both mean this, so they
+    // The call screen's arrow and a bottom-edge swipe both mean this, so they
     // both call it.
     void GoHome();
     // Reusable text input. FieldKind chooses submit label, max length, secret mode,
