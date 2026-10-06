@@ -60,7 +60,7 @@ This change does not establish complete phone/desktop parity:
 
 ## Validation
 
-Server: `bun run check` (217 passing). AMOLED 2.06 firmware build, including the latest picker changes, completed in the active unified checkout and produced `build/xiaozhi.bin`; the generated profile enables Codex Voice and the default display style. The device has not been flashed. Firmware sender:
+Server: `bun run check` (217 passing). AMOLED 2.06 firmware build, including the latest picker changes, completed in the active unified checkout and produced `build/xiaozhi.bin`; the generated profile enables Codex Voice and the default display style. The AMOLED 2.06 device (`28:84:85:b4:f3:90`) was flashed on October 6; all written data passed hash verification. It booted and reconnected. With the serial reader closed, USB remained present for over 90 seconds idle while charging, and device status still reported brightness 100. A real voice call and unplugged battery behavior remain to be checked physically. A full 32 MB pre-flash backup is stored locally. Firmware sender:
 `python3 firmware/scripts/tests/test_voice_reasoning.py` after firmware dependencies are
 available. `test_voice_messages.py` also checks picker refresh, stale replies and empty-list clearing. Both checks reuse the existing cJSON and host toolchain helpers.
 
