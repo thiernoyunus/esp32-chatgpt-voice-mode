@@ -116,6 +116,7 @@ public:
     // Boards without Wi-Fi can ignore.
     virtual void SetWifiPowerSave(PowerSaveLevel level) { (void)level; }
 
+    virtual bool IsExternalPowerConnected() { return false; }
     virtual bool GetBatteryLevel(int &level, bool& charging, bool& discharging);
     virtual std::string GetSystemInfoJson();
     virtual void SetPowerSaveLevel(PowerSaveLevel level) = 0;

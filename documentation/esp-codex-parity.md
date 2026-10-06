@@ -28,6 +28,7 @@ flowchart LR
 | Project discovery and task creation | The initial reduced-tool check listed projects and created a local task there. After the user reproduced failure with the full setup, the signed-runtime fix was checked with all configured tools enabled: a saved voice-owned chat called the real `list_projects` and `create_thread`. The created task used `/Users/thiernodiallo/Documents/Instagram page` and completed with `hi` (caller `01a10f9f-8bd4-71d0-a513-ac87d81a4028`, task `01a10f9f-cc80-71a1-b2a0-a196d43834d6`). |
 | Configured tools and plugins | Configuration is inherited. Optional per-machine exclusions still apply; discovery alone does not prove every external account is signed in. |
 | Reasoning | Watch choice, then ESP environment preference, then Codex configuration, then low. Model selection is independent. Unsupported combinations fail clearly. |
+| Plugged-in watch | The AMOLED 2.06 checks cable power, including a full battery. Its idle screen/sleep action keeps it awake while plugged in and wakes an already sleeping screen after cable insertion. Unplugging restores normal idle sleep. Requires updated firmware. |
 | Recent chat picker | Fetches fresh non-archived chats when opened, without starting audio. Empty responses clear old rows, and replies from older requests are ignored. Requires updated firmware. |
 | Unavailable saved chats | Archived or missing chats open a fresh saved chat, with a notice. Other setup errors remain visible. |
 | New and resumed reasoning | The installed Codex returned `high` for both a newly opened chat and a resumed saved voice chat, with its global preference set to `low`. |
@@ -62,3 +63,5 @@ This change does not establish complete phone/desktop parity:
 Server: `bun run check` (217 passing). AMOLED 2.06 firmware build, including the latest picker changes, completed in the active unified checkout and produced `build/xiaozhi.bin`; the generated profile enables Codex Voice and the default display style. The device has not been flashed. Firmware sender:
 `python3 firmware/scripts/tests/test_voice_reasoning.py` after firmware dependencies are
 available. `test_voice_messages.py` also checks picker refresh, stale replies and empty-list clearing. Both checks reuse the existing cJSON and host toolchain helpers.
+
+Plugged-in sleep check: `python3 firmware/scripts/tests/test_plugged_sleep.py` compiles the actual cable detector and screen-sleep function and checks cable insertion, full-battery power, repeated idle attempts and unplugging.

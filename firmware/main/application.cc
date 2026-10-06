@@ -1055,13 +1055,16 @@ void Application::InitializeSystemTime() {
 #endif
 
 void Application::SleepScreen() {
+    auto& board = Board::GetInstance();
+    if (board.IsExternalPowerConnected()) {
+        NoteUserActivity();
+        return;
+    }
     if (is_screen_asleep_) {
         return;
     }
     is_screen_asleep_ = true;
     ESP_LOGI(TAG, "Screen asleep after %d s idle", idle_seconds_);
-
-    auto& board = Board::GetInstance();
     board.GetDisplay()->SetPowerSaveMode(true);
     auto backlight = board.GetBacklight();
     if (backlight != nullptr) {
