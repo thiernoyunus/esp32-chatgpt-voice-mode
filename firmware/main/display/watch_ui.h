@@ -1,5 +1,6 @@
 #pragma once
 #include "lvgl_display/lvgl_font.h"
+#include "watch_palette.h"
 #include <lvgl.h>
 #include <functional>
 #include <memory>
@@ -8,7 +9,7 @@
 
 class WatchUi {
 public:
-    static constexpr int kThemeCount = 4;
+    static constexpr int kThemeCount = watch_palette::kThemeCount;
     enum class Page { Home, Voice, Settings, Brightness, Volume, Wifi, Clock, About,
                       CodexSettings, Models, Keyboard, WifiSetup, Sleep, Reasoning,
                       Chats, Voices, Shapes, Colours, Themes };

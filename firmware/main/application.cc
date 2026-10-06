@@ -91,6 +91,15 @@ bool Application::SetVoiceCharacter(int shape, int colour) {
     return display != nullptr && display->SetVoiceCharacter(saved_shape, saved_colour);
 }
 
+bool Application::SetUiTheme(int theme) {
+    Settings s("display", true);
+    s.SetInt("ui_theme", std::clamp(theme, 0, watch_palette::kThemeCount - 1));
+    // The watch draws its own colours, so changing the saved value is not
+    // enough - the running screen has to be handed the new palette.
+    RefreshWatchInfo();
+    return true;
+}
+
 void Application::Initialize() {
     auto& board = Board::GetInstance();
     SetDeviceState(kDeviceStateStarting);
@@ -1893,8 +1902,7 @@ void Application::OnWatchAction(WatchUi::Action action, int value,
                 break;
             }
             case WatchUi::Action::SelectTheme: {
-                Settings s("display", true);
-                s.SetInt("ui_theme", std::clamp(value, 0, WatchUi::kThemeCount - 1));
+                SetUiTheme(value);
                 break;
             }
             case WatchUi::Action::SelectShape:

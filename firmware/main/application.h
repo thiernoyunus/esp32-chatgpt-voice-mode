@@ -86,6 +86,12 @@ public:
     bool SetVoiceCharacter(int shape, int colour);
 
     /**
+     * Save and apply one of the watch screen's themes. Shared with the Themes
+     * picker for the same reason SetVoiceCharacter is shared with its picker.
+     */
+    bool SetUiTheme(int theme);
+
+    /**
      * Schedule a callback to be executed in the main task
      */
     void Schedule(std::function<void()>&& callback);

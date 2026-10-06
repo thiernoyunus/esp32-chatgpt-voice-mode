@@ -311,6 +311,21 @@ export function createDeviceControlServer(bridge: DeviceToolBridge): McpServer {
   );
 
   server.registerTool(
+    'set_theme',
+    {
+      title: 'Change the screen theme',
+      description:
+        "Change the watch screen's colour theme - its accent colour, background and cards, the same one the Themes picker offers. Call with no argument to hear which theme is on now. The device refuses a theme it does not have and answers with the full list.",
+      inputSchema: {
+        theme: z.string().min(1).optional(),
+        device_id: z.string().min(1).optional(),
+      },
+    },
+    async ({ theme, device_id }) =>
+      describeOutcome(await bridge.call('self.screen.set_ui_theme', { theme: theme ?? '' }, device_id)),
+  );
+
+  server.registerTool(
     'capture_screen',
     {
       title: 'Capture the screen',

@@ -11,6 +11,7 @@
 #include <stdio.h>
 
 #include "voice_character.h"
+#include "watch_palette.h"
 
 using namespace voice_character;
 
@@ -44,6 +45,19 @@ int main(void) {
     const std::string names = Names(kColourNames, kColorCount);
     for (int i = 0; i < kColorCount; ++i) assert(names.find(kColourNames[i]) != std::string::npos);
     assert(Names(kShapeNames, kShapeCount).find("Droplet") != std::string::npos);
+
+    /* 5. The screen's themes resolve the same way, because they arrive by
+     *    voice through the same door. */
+    for (int i = 0; i < watch_palette::kThemeCount; ++i)
+        assert(watch_palette::IndexOf(watch_palette::kThemeNames, watch_palette::kThemeCount,
+                                      watch_palette::kThemeNames[i]) == i);
+    assert(watch_palette::IndexOf(watch_palette::kThemeNames, watch_palette::kThemeCount, "lime") == 1);
+    assert(watch_palette::IndexOf(watch_palette::kThemeNames, watch_palette::kThemeCount, "purple") == -1);
+    /* 6. A theme's name and its colours are one row: a name that resolved must
+ *    land on the palette that name belongs to, not merely a valid index. */
+    assert(watch_palette::Palette(0).accent == 0x00D8E9); /* Cyan */
+    assert(watch_palette::Palette(3).accent == 0xFF4FA5); /* Rose */
+    assert(std::string(watch_palette::kUiPalettes[1].name) == "Lime");
 
     printf("voice_character_check: ok\n");
     return 0;

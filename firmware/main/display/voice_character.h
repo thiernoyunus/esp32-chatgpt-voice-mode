@@ -1,10 +1,9 @@
 #pragma once
 
-#include <strings.h>
-
 #include <cstddef>
 #include <cstdint>
-#include <string>
+
+#include "name_lookup.h"
 
 /* The character the watch wears on the call screen: one of bloub's eight
  * silhouettes, in one of these colours.
@@ -45,29 +44,8 @@ static_assert(sizeof(kShapeNames) / sizeof(kShapeNames[0]) == static_cast<size_t
 static_assert(sizeof(kColourNames) / sizeof(kColourNames[0]) == static_cast<size_t>(kColorCount),
               "a colour has no name, or a name has no colour");
 
-/* Name to index, case-insensitive. -1 means "no such name", which callers
- * answer with the list rather than guessing: a spoken "chartreuse" should not
- * quietly become whatever happened to be first. */
-inline int IndexOf(const char* const* names, int count, const char* name) {
-    if (name == nullptr || name[0] == '\0') return -1;
-    for (int i = 0; i < count; ++i) {
-        if (strcasecmp(name, names[i]) == 0) return i;
-    }
-    return -1;
-}
-
-/* What the watch is wearing right now, in words an assistant can read out. */
-inline const char* NameOf(const char* const* names, int index, int count) {
-    return (index >= 0 && index < count) ? names[index] : "unknown";
-}
-
-inline std::string Names(const char* const* names, int count) {
-    std::string out;
-    for (int i = 0; i < count; ++i) {
-        if (i != 0) out += ", ";
-        out += names[i];
-    }
-    return out;
-}
+using name_lookup::IndexOf;
+using name_lookup::NameOf;
+using name_lookup::Names;
 
 }  // namespace voice_character

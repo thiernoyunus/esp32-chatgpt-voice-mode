@@ -17,6 +17,7 @@
 #include "lvgl_theme.h"
 #include "lvgl_display.h"
 #include "display/voice_character.h"
+#include "display/watch_palette.h"
 
 #define TAG "MCP"
 
@@ -130,6 +131,39 @@ void McpServer::AddCommonTools() {
                     return true;
                 }
                 return false;
+            });
+    }
+
+    if (display) {
+        // Named differently from self.screen.set_theme on purpose. That tool is
+        // the LVGL light/dark object, which barely shows on a watch that draws
+        // its own colours; this is the theme the Themes picker offers and the
+        // one on screen. Two tools with one name is a coin flip for whoever is
+        // picking between them.
+        AddTool("self.screen.set_ui_theme",
+            "Change the watch screen's colour theme - its accent, background and cards. "
+            "This is the theme the Themes picker offers, not a light/dark setting. "
+            "Call with no argument to hear which one is on now. An unrecognised name is "
+            "refused with the full list rather than guessed at.",
+            PropertyList({
+                Property("theme", kPropertyTypeString, std::string(""))
+            }),
+            [](const PropertyList& properties) -> ReturnValue {
+                auto name = properties["theme"].value<std::string>();
+                int theme = watch_palette::IndexOf(watch_palette::kThemeNames,
+                                                   watch_palette::kThemeCount, name.c_str());
+                if (!name.empty() && theme < 0) {
+                    return "There is no theme called \"" + name + "\". The themes are: " +
+                        watch_palette::Names(watch_palette::kThemeNames, watch_palette::kThemeCount) + ".";
+                }
+                if (!Application::GetInstance().SetUiTheme(theme)) {
+                    return std::string("This screen does not draw a themed UI.");
+                }
+                Settings s("display", true);
+                int worn = std::clamp(static_cast<int>(s.GetInt("ui_theme", 0)),
+                                      0, watch_palette::kThemeCount - 1);
+                return std::string("The screen is now on the ") +
+                    watch_palette::NameOf(watch_palette::kThemeNames, worn, watch_palette::kThemeCount) + " theme.";
             });
     }
 
