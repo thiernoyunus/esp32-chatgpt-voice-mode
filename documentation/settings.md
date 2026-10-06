@@ -19,7 +19,7 @@ VOICEMODE_CODEX_DISABLE_MCP=slow-server,another \
 | `VOICEMODE_CODEX_MODEL` | Pin a model for calls, for example `gpt-6-luna`. Left unset, Codex uses your configured model. |
 | `VOICEMODE_CODEX_DISABLE_MCP` | Comma-separated MCP servers to switch off for calls. Useful for ones slow to start, since each one delays the first call after a restart. |
 | `VOICEMODE_CODEX_BIN` | Path to the Codex program, if it is not the one inside ChatGPT.app. |
-| `VOICEMODE_CODEX_ROOT` | Absolute folder for new voice chats. Defaults to `~/Library/Application Support/ESP32 Voice Mode/chats`. |
+| `VOICEMODE_CODEX_ROOT` | Absolute folder for new voice chats. If unset, follows Codex's projectless task folder, or `~/Documents/Codex` when Codex has no custom folder. |
 | `ESP32_VOICE_PORT` | Port the device dials. Defaults to `8790`; changing it means telling the device a new address, which SETUP.md covers. |
 
 Use a model your Codex actually offers. A retired name is remapped where a

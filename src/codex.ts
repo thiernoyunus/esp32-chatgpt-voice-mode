@@ -16,7 +16,7 @@ import {
 } from './codex-events';
 import { readRealtimeActivity, ConnectorMetadataCache } from './activity';
 import { forwardActivityIcon, resolveIconPixels } from './icons';
-import { voiceStorageRoot, voiceStorageError } from './voice-storage';
+import { voiceStorageError } from './voice-storage';
 import { releaseVoiceChat } from './voice-release';
 import { classifyVoiceFailure } from './failures';
 import { resolveCodexExecutable } from './codex-executable';
@@ -1173,7 +1173,7 @@ export class CodexAppServerClient {
       },
     });
     this.#send({ method: 'initialized', params: {} });
-    const storageRoot = voiceStorageRoot();
+    const storageRoot = this.workingDirectory;
     try {
       mkdirSync(storageRoot, { recursive: true });
       // Ask the child itself: the listener may have access that Codex lacks.
@@ -1693,7 +1693,7 @@ export class CodexAppServerClient {
 
   /** Make a new chat under the configured service storage folder. */
   #voiceChatFolder(): string {
-    const root = voiceStorageRoot();
+    const root = this.workingDirectory;
     try {
       return createVoiceChatFolder(root);
     } catch (error) {

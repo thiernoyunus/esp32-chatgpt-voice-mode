@@ -80,7 +80,7 @@ audio does not pass through your Mac at all.
 | Call setup (the offer and the answer) | Device ⇄ this Mac, then Codex on this Mac |
 | Captions, tool calls, status | Device ⇄ this Mac, then Codex on this Mac |
 | **Spoken audio, both directions** | Device ⇄ **OpenAI's realtime voice service, directly** |
-| Saved voice chats | Your Mac, under `~/Library/Application Support/ESP32 Voice Mode/chats` |
+| Saved voice chats and work folders | Codex on your Mac; new work folders follow its projectless task folder (usually `~/Documents/Codex`) |
 
 The audio reaches OpenAI as part of the call, under your own ChatGPT/Codex
 account and its terms; nothing here stores it or forwards it anywhere else.
@@ -101,8 +101,9 @@ account and its terms; nothing here stores it or forwards it anywhere else.
 - **Account eligibility is not established by this project.** Doctor can check
   the program and listener, but cannot certify plan eligibility or voice access.
   Use the reported sign-in, model, or usage-limit error to guide troubleshooting.
-- **macOS can block the chat folder.** Recent installs keep new chats outside
-  Documents and Desktop for that reason; see SETUP.md for older installs.
+- **macOS can block the chat folder.** New chats follow Codex's projectless
+  task folder (`~/Documents/Codex` unless customized); see SETUP.md for
+  permission help or a watch-only alternate folder.
 
 ## Go deeper
 

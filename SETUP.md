@@ -305,17 +305,22 @@ tail -f /tmp/esp32-voice-mode.log
 
 ### Voice chat storage and macOS permissions
 
-New voice chats use `~/Library/Application Support/ESP32 Voice Mode/chats`.
+New voice chat work folders follow Codex's projectless task folder, alongside
+regular Codex chats. When you have not chosen another folder in Codex, that is
+`~/Documents/Codex`.
+Restart the Mac service after changing Codex's projectless task folder so it
+checks the new location before taking another call.
 The background service checks that Codex itself can read configuration there
 before reporting ready. Check the log for `Voice chat folder verified by Codex`.
 Then make a real call; startup checks do not prove speaker audio works.
 
-Older installs may explicitly use `~/Documents/Codex`. macOS can allow the
-terminal or listener to access Documents while denying its background Codex
+macOS can allow the terminal or listener to access Documents while denying its background Codex
 process. The device then briefly connects and returns to idle with
 `failed to load configuration: Operation not permitted`.
 
-For an affected install, choose storage for new calls and reinstall:
+If that happens, grant the background service access to Documents in macOS
+Privacy & Security, then restart it. Or choose the Library folder for new calls
+and reinstall:
 
 ```sh
 VOICEMODE_CODEX_ROOT="$HOME/Library/Application Support/ESP32 Voice Mode/chats" \

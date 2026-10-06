@@ -73,7 +73,7 @@ done
 launchctl bootstrap "gui/$(id -u)" "$PLIST"
 
 echo "Installed $LABEL"
-echo "  New chats default to ~/Library/Application Support/ESP32 Voice Mode/chats."
+echo "  New chats follow Codex's projectless task folder unless VOICEMODE_CODEX_ROOT is set."
 echo "  Check for Voice chat folder verified by Codex before testing a call."
 echo "  logs:  tail -f /tmp/esp32-voice-mode.log"
 echo "  stop:  launchctl bootout gui/$(id -u)/$LABEL"

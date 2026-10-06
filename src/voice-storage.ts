@@ -1,7 +1,8 @@
+import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 
-/** Keep background-service files out of macOS's protected Documents folder. */
+/** Put new voice chats beside Codex Desktop's projectless chats. */
 export function voiceStorageRoot(
   environment: Record<string, string | undefined> = process.env,
   home = homedir(),
@@ -14,7 +15,24 @@ export function voiceStorageRoot(
     }
     return configured;
   }
-  return join(home, 'Library', 'Application Support', 'ESP32 Voice Mode', 'chats');
+  let codexConfig: string;
+  try {
+    codexConfig = readFileSync(join(environment.CODEX_HOME?.trim() || join(home, '.codex'), 'config.toml'), 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    codexConfig = '';
+  }
+  if (codexConfig) {
+    const desktop = (Bun.TOML.parse(codexConfig) as { desktop?: { projectlessWorkspaceRoot?: unknown } }).desktop;
+    const projectlessRoot = desktop?.projectlessWorkspaceRoot;
+    if (typeof projectlessRoot === 'string' && projectlessRoot.trim()) {
+      if (!isAbsolute(projectlessRoot)) {
+        throw new Error('Codex projectless task folder must be an absolute path.');
+      }
+      return projectlessRoot;
+    }
+  }
+  return join(home, 'Documents', 'Codex');
 }
 
 export function voiceStorageError(root: string, cause: unknown): Error {
