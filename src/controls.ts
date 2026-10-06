@@ -229,7 +229,7 @@ function readImageContent(
 /**
  * Build the tool server Codex talks to.
  *
- * Only four tools, because only four are worth an assistant's attention. The
+ * Only the tools worth an assistant's attention. The
  * firmware offers more - reboot, firmware upgrade, asset downloads - and those
  * are deliberately left out: nothing said in a voice call should be able to
  * restart the device or replace its firmware.
@@ -286,6 +286,28 @@ export function createDeviceControlServer(bridge: DeviceToolBridge): McpServer {
     },
     async ({ brightness, device_id }) =>
       describeOutcome(await bridge.call('self.screen.set_brightness', { brightness }, device_id)),
+  );
+
+ server.registerTool(
+    'set_character',
+    {
+      title: 'Change the character on screen',
+      description:
+        "Change the character's shape and/or colour on the device's call screen - for example 'triangle' and 'blue'. Both are optional: name only the one to change and the other stays as it is. Call with neither to hear what it is wearing now. The device refuses a name it does not have and answers with the full list of what it does have.",
+      inputSchema: {
+        shape: z.string().min(1).optional(),
+        colour: z.string().min(1).optional(),
+        device_id: z.string().min(1).optional(),
+      },
+    },
+    async ({ shape, colour, device_id }) =>
+      describeOutcome(
+        await bridge.call(
+          'self.screen.set_character',
+          { shape: shape ?? '', colour: colour ?? '' },
+          device_id,
+        ),
+      ),
   );
 
   server.registerTool(

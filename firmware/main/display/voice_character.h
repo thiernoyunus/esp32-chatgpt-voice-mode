@@ -1,6 +1,10 @@
 #pragma once
 
+#include <strings.h>
+
+#include <cstddef>
 #include <cstdint>
+#include <string>
 
 /* The character the watch wears on the call screen: one of bloub's eight
  * silhouettes, in one of these colours.
@@ -28,5 +32,42 @@ inline constexpr int kColorCount = static_cast<int>(sizeof(kColors) / sizeof(kCo
  * that only need the bound - the settings, the picker - do not have to pull in
  * the silhouette tables to get it. */
 inline constexpr int kShapeCount = 8;
+
+/* The names for both lists. These started life in watch_ui.cc, which is where
+ * the pickers draw them; a voice tool has to say "triangle" and "blue" and get
+ * the same answer, so they live here with the numbers they name. */
+inline constexpr const char* kShapeNames[] = {
+    "Circle", "Pebble", "Squircle", "Capsule", "Triangle", "Hexagon", "Cloud", "Droplet"};
+inline constexpr const char* kColourNames[] = {
+    "Cream", "Grey", "Brown", "Red", "Orange", "Amber", "Green", "Teal", "Blue", "Violet", "Pink"};
+static_assert(sizeof(kShapeNames) / sizeof(kShapeNames[0]) == static_cast<size_t>(kShapeCount),
+              "a silhouette has no name, or a name has no silhouette");
+static_assert(sizeof(kColourNames) / sizeof(kColourNames[0]) == static_cast<size_t>(kColorCount),
+              "a colour has no name, or a name has no colour");
+
+/* Name to index, case-insensitive. -1 means "no such name", which callers
+ * answer with the list rather than guessing: a spoken "chartreuse" should not
+ * quietly become whatever happened to be first. */
+inline int IndexOf(const char* const* names, int count, const char* name) {
+    if (name == nullptr || name[0] == '\0') return -1;
+    for (int i = 0; i < count; ++i) {
+        if (strcasecmp(name, names[i]) == 0) return i;
+    }
+    return -1;
+}
+
+/* What the watch is wearing right now, in words an assistant can read out. */
+inline const char* NameOf(const char* const* names, int index, int count) {
+    return (index >= 0 && index < count) ? names[index] : "unknown";
+}
+
+inline std::string Names(const char* const* names, int count) {
+    std::string out;
+    for (int i = 0; i < count; ++i) {
+        if (i != 0) out += ", ";
+        out += names[i];
+    }
+    return out;
+}
 
 }  // namespace voice_character

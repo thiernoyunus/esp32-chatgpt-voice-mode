@@ -22,10 +22,18 @@ to review this baseline if the manifest range changes. The desktop supplies:
 python3 scripts/tests/test_watch_ui.py
 ```
 
-That builds (downloading LVGL the first time) and checks the pictures. Pictures
-land in `/tmp/voicemode-watch-ui-host/shots`. Override where they go with
-`VOICEMODE_WATCH_UI_SHOTS`, and where the build goes with
-`VOICEMODE_WATCH_UI_BUILD`.
+That builds (downloading LVGL the first time) and checks the pictures, on **both
+panels**: `shots/round` is the 360x360 round watch and `shots/amoled` is the
+410x502 AMOLED. They are different layouts of the same `watch_ui.cc`, and the
+AMOLED has pages the round watch does not, so a change can pass on one and break
+the other. Override where the pictures go with `VOICEMODE_WATCH_UI_SHOTS`, and
+where the build goes with `VOICEMODE_WATCH_UI_BUILD`.
+
+To see one panel on its own, run the binary directly with the switch:
+
+```sh
+VOICEMODE_TEST_AMOLED=1 /tmp/voicemode-watch-ui-host/build/watch_ui_test
+```
 
 To build against an LVGL checkout you already have (useful offline), set
 `VOICEMODE_LVGL_DIR` — the test script forwards it to CMake:
@@ -62,9 +70,9 @@ cmake --build /tmp/watch-ui-build -j8
 From the firmware folder, with a C/C++ compiler, Git, and CMake installed:
 
 ```sh
-python3 -m venv /tmp/voicemode-tests-venv
-/tmp/voicemode-tests-venv/bin/pip install pillow kconfiglib
-/tmp/voicemode-tests-venv/bin/python scripts/tests/run_host_tests.py
+python3 -m venv .venv
+.venv/bin/pip install -r scripts/tests/requirements.txt
+.venv/bin/python scripts/tests/run_host_tests.py
 ```
 
 The runner executes each test program and fails if any test fails or takes more

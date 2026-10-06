@@ -16,6 +16,7 @@
 #include "settings.h"
 #include "lvgl_theme.h"
 #include "lvgl_display.h"
+#include "display/voice_character.h"
 
 #define TAG "MCP"
 
@@ -77,6 +78,43 @@ void McpServer::AddCommonTools() {
     }
 
     auto display = board.GetDisplay();
+    if (display) {
+        AddTool("self.screen.set_character",
+            "Change the character the device wears on the call screen - its shape and its colour. "
+            "Both are optional: name one to change it, leave the other out to keep it. "
+            "Call with neither to hear what it is wearing now. An unrecognised name is refused "
+            "with the full list rather than guessed at.",
+            PropertyList({
+                Property("shape", kPropertyTypeString, std::string("")),
+                Property("colour", kPropertyTypeString, std::string(""))
+            }),
+            [](const PropertyList& properties) -> ReturnValue {
+                auto shape_name = properties["shape"].value<std::string>();
+                auto colour_name = properties["colour"].value<std::string>();
+                int shape = voice_character::IndexOf(voice_character::kShapeNames,
+                                                      voice_character::kShapeCount, shape_name.c_str());
+                int colour = voice_character::IndexOf(voice_character::kColourNames,
+                                                        voice_character::kColorCount, colour_name.c_str());
+                if (!shape_name.empty() && shape < 0) {
+                    return "There is no shape called \"" + shape_name + "\". The shapes are: " +
+                        voice_character::Names(voice_character::kShapeNames, voice_character::kShapeCount) + ".";
+                }
+                if (!colour_name.empty() && colour < 0) {
+                    return "There is no colour called \"" + colour_name + "\". The colours are: " +
+                        voice_character::Names(voice_character::kColourNames, voice_character::kColorCount) + ".";
+                }
+                if (!Application::GetInstance().SetVoiceCharacter(shape, colour)) {
+                    return std::string("This screen does not draw a character, so there was nothing to change.");
+                }
+                Settings s("display", true);
+                int worn_shape = std::clamp(static_cast<int>(s.GetInt("voice_shape", 0)),
+                                            0, voice_character::kShapeCount - 1);
+                int worn_colour = std::clamp(static_cast<int>(s.GetInt("voice_colour", 0)),
+                                              0, voice_character::kColorCount - 1);
+                return std::string("It is now a ") + voice_character::NameOf(voice_character::kShapeNames, worn_shape, voice_character::kShapeCount) +
+                    " in " + voice_character::NameOf(voice_character::kColourNames, worn_colour, voice_character::kColorCount) + ".";
+            });
+    }
     if (display && display->GetTheme() != nullptr) {
         AddTool("self.screen.set_theme",
             "Set the theme of the screen. The theme can be `light` or `dark`.",

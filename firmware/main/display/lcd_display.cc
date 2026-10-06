@@ -1267,11 +1267,12 @@ void LcdDisplay::SetVoiceMicrophoneMuted(bool muted) {
     }
 }
 
-void LcdDisplay::SetVoiceCharacter(int shape, int colour) {
+bool LcdDisplay::SetVoiceCharacter(int shape, int colour) {
     DisplayLockGuard lock(this);
     voice_shape_ = std::clamp(shape, 0, voice_character::kShapeCount - 1);
     voice_colour_ = std::clamp(colour, 0, voice_character::kColorCount - 1);
     RenderVoiceOrb(static_cast<float>(lv_tick_elaps(voice_orb_started_at_)) / 1000.0f);
+    return true;
 }
 
 void LcdDisplay::SetStatus(const char* status) {

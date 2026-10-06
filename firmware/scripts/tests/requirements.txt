@@ -1,0 +1,8 @@
+# What the host tests in this directory need. Not committed as an environment:
+# a venv is full of absolute paths and built binaries that are wrong on the
+# next machine. This file is what someone else needs instead.
+#
+#   python3 -m venv .venv
+#   .venv/bin/pip install -r scripts/tests/requirements.txt
+pillow
+kconfiglib

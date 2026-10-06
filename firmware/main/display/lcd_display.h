@@ -106,7 +106,7 @@ public:
     void SetVoiceActivity(const char* activity, const char* icon = "none",
                           const char* pixels = nullptr) override;
     void SetVoiceModel(const char* name) override;
-    void SetVoiceCharacter(int shape, int colour);
+    bool SetVoiceCharacter(int shape, int colour) override;
     void ShowVoiceModels(const std::vector<std::string>& names, size_t page) override;
     void HideVoiceModels() override;
     void FeedTouch(bool pressed, int x, int y) override;

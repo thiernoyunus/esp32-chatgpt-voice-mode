@@ -42,12 +42,8 @@ const char* SleepLabel(int seconds){
     for(const auto& o:kSleepOpts) if(o.seconds==seconds) return o.label;
     return "Custom";
 }
-constexpr const char* kShapeNames[]={"Circle","Pebble","Squircle","Capsule","Triangle","Hexagon","Cloud","Droplet"};
-static_assert(sizeof(kShapeNames)/sizeof(kShapeNames[0])==voice_character::kShapeCount,
-              "a silhouette has no name, or a name has no silhouette");
-constexpr const char* kColourNames[]={"Cream","Grey","Brown","Red","Orange","Amber","Green","Teal","Blue","Violet","Pink"};
-static_assert(sizeof(kColourNames)/sizeof(kColourNames[0])==voice_character::kColorCount,
-              "a colour has no name, or a name has no colour");
+using voice_character::kShapeNames;
+using voice_character::kColourNames;
 /* Straight ahead and expressionless. bloub's NEUTRAL expression is the rest
  * gaze measured off the reference video - a three-quarter view - which at
  * preview size reads as looking off to one side and leaves only one eye
