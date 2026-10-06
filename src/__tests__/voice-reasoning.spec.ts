@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { buildCodexOverrides, voiceReasoningEffort, voiceThreadSettings, voiceThreadConfig } from '../codex';
+import { buildCodexOverrides, voiceReasoningEffort, voiceThreadSettings, voiceThreadConfig, voiceChatUnavailable } from '../codex';
 import { codexBridgeRealtimeRequestSchema } from '../codex-events';
 import { classifyVoiceFailure } from '../failures';
 
@@ -7,6 +7,9 @@ test('new and resumed calls keep reasoning independent of the model, with device
   const previous = process.env.VOICEMODE_CODEX_REASONING_EFFORT;
   try {
     delete process.env.VOICEMODE_CODEX_REASONING_EFFORT;
+    expect(voiceChatUnavailable(new Error('session 123 is archived.'))).toBe(true);
+    expect(voiceChatUnavailable(new Error('no rollout found for thread id 123'))).toBe(true);
+    expect(voiceChatUnavailable(new Error('Model first does not support reasoning ultra'))).toBe(false);
     expect(buildCodexOverrides().some(value => value.includes('model_reasoning_effort'))).toBe(false);
     expect(voiceReasoningEffort('high', 'medium')).toBe('high');
     expect(voiceReasoningEffort(undefined, 'medium')).toBe('medium');

@@ -537,6 +537,10 @@ export function voiceThreadSettings(model: string | undefined, effort: string, c
   return { model: entry.model, reasoningEffort: effort };
 }
 
+export function voiceChatUnavailable(error: unknown): boolean {
+  return error instanceof Error && /not found|unknown thread|no rollout|does not exist|\bis archived\b/i.test(error.message);
+}
+
 export function voiceThreadConfig(settings?: { model: string; reasoningEffort: string }, realtime = true): Record<string, unknown> {
   return {
     ...(realtime ? { 'features.realtime_conversation': true } : {}),
@@ -1976,7 +1980,12 @@ export class CodexAppServerClient {
         },
       )
       .catch((error: unknown) => {
-        if (error instanceof Error && /not found|unknown thread|no rollout|does not exist/i.test(error.message)) return null;
+        if (voiceChatUnavailable(error)) {
+          const session = this.#activeRealtimeSession;
+          session?.onTranscript({ type: 'realtime_status', requestId: session.requestId,
+            caption: 'Chat unavailable; starting a new chat', icon: 'none' });
+          return null;
+        }
         throw error;
       });
   }
