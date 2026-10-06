@@ -31,7 +31,8 @@ try {
   await request(2, 'config/value/write', {
     keyPath: 'mcp_servers.esp_codex_host', mergeStrategy: 'replace',
     value: { command: node, args: [resolve(import.meta.dir, '../src/desktop-core.ts'), executable],
-      env_vars: ['CODEX_APP_TOOLS_PIPE_PATH', 'CODEX_HOME', 'HOME'], startup_timeout_sec: 10 },
+      env_vars: ['CODEX_APP_TOOLS_PIPE_PATH', 'CODEX_HOME', 'HOME'],
+      env: { CODEX_MCP_NODE_PATH: node, CODEX_BROWSER_USE_NODE_PATH: node }, startup_timeout_sec: 10 },
   });
   console.log('Registered the ESP companion in Codex desktop.');
 } finally { lines.close(); child.kill(); }

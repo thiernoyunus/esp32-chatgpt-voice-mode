@@ -8,7 +8,7 @@ import { DesktopCodexProcess, startDesktopCoreHost } from '../desktop-core';
 test('desktop owns the core, preserves its messages, and rejects invalid startup data', async () => {
   const directory = mkdtempSync('/tmp/esp-core-check-');
   const executable = join(directory, 'fake-core');
-  writeFileSync(executable, '#!/bin/sh\n[ "$1" = app-server ] || exit 1\nexec cat\n');
+  writeFileSync(executable, '#!/bin/sh\n[ "$1" = app-server ] || exit 1\n[ -x "$CODEX_MCP_NODE_PATH" ] || exit 2\n[ "$CODEX_MCP_NODE_PATH" = "$CODEX_BROWSER_USE_NODE_PATH" ] || exit 3\nexec cat\n');
   chmodSync(executable, 0o700);
   let host = await startDesktopCoreHost(executable, directory);
   let child: DesktopCodexProcess | undefined;

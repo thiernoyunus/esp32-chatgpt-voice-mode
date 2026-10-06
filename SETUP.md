@@ -306,6 +306,10 @@ level. An unsupported combination stops the call with an explanation; choose a
 supported level or another model. The watch must run firmware that sends
 `reasoningEffort`; older firmware still uses the Mac/Codex preference.
 
+The updated watch refreshes saved chats when you open the picker. Archived chats
+are excluded; an archived or deleted selection opens a fresh saved chat with a
+notice. These picker updates require the new firmware.
+
 Access follows Codex's configured permissions, including Full Access when selected
 there. Required approvals and questions are shown in the saved voice chat on your
 phone or desktop. [The parity audit](documentation/esp-codex-parity.md) records

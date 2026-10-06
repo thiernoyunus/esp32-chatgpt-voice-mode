@@ -86,7 +86,7 @@ struct CodexVoiceProtocol {
     struct ChatChoice { std::string id, name, folder; };
     std::vector<ModelChoice> models_{{"", "Default"}};
     std::vector<ChatChoice> chats_;
-    std::string request_id_ = "current", error;
+    std::string request_id_ = "current", chat_list_request_id_ = "picker", error;
     /* Written by the parser when a reply is expected; read by the watchdog. */
     std::atomic<uint32_t> last_audio_frame_ms_{0}, speech_expected_since_ms_{0};
     std::string transcript_partial_, transcript_role_;
@@ -115,6 +115,15 @@ struct CodexVoiceProtocol {
 HANDLER
 int main(int argc, char** argv) {
     CodexVoiceProtocol voice;
+    voice.Receive(R"({"type":"chat_list","requestId":"picker","chats":[{"id":"live","name":"Live chat","folder":"Project"}]})");
+    Application::GetInstance().Drain();
+    assert(voice.chats_.size() == 1 && voice.chats_[0].id == "live");
+    voice.Receive(R"({"type":"chat_list","requestId":"stale","chats":[]})");
+    Application::GetInstance().Drain();
+    assert(voice.chats_.size() == 1);
+    voice.Receive(R"({"type":"chat_list","requestId":"picker","chats":[]})");
+    Application::GetInstance().Drain();
+    assert(voice.chats_.empty());
     int tool_requests = 0;
     voice.on_incoming_json_ = [&](const cJSON*) { ++tool_requests; };
     voice.Receive(R"({"type":"mcp","payload":{"jsonrpc":"2.0","id":1,"method":"tools/call"}})");

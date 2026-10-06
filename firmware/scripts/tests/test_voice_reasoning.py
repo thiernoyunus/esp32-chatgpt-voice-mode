@@ -3,7 +3,7 @@
 from pathlib import Path
 import subprocess
 import tempfile
-import os
+from host_dependencies import fetch_cjson
 from host_toolchain import compiler_flags
 
 root = Path(__file__).resolve().parents[2]
@@ -60,7 +60,7 @@ int main() {
 '''
 with tempfile.TemporaryDirectory(prefix='voice-reasoning-') as directory:
     directory = Path(directory)
-    cjson = Path(os.environ.get('CJSON_SOURCE', root / 'managed_components/espressif__cjson/cJSON'))
+    cjson = fetch_cjson(directory)
     cpp = directory / 'check.cc'
     cpp.write_text(program)
     binary = directory / 'check'

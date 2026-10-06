@@ -21,6 +21,14 @@ it('uses the current Luna model when the device saved the retired Luna model', (
   if (selection.kind === 'resolved') expect(selection.entry.model).toBe('gpt-6-luna');
 });
 
+it('refreshes the chat picker independently of a voice call, including clearing an empty list', () => {
+  expect(planDeviceMessage(JSON.stringify({ type: 'chat_list_request', requestId: 'picker' })))
+    .toEqual({ kind: 'chat_list', requestId: 'picker' });
+  expect(JSON.parse(encodeServerToDeviceMessage({ type: 'chat_list', requestId: 'picker', chats: [] })))
+    .toEqual({ type: 'chat_list', requestId: 'picker', chats: [] });
+  expect(planDeviceMessage(JSON.stringify({ type: 'chat_list_request', requestId: '' })).kind).toBe('drop');
+});
+
 const OFFER = JSON.stringify({
   type: 'realtime_offer',
   requestId: 'call-1',

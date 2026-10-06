@@ -1833,6 +1833,11 @@ void Application::OnWatchAction(WatchUi::Action action, int value,
                 if (protocol_) protocol_->CloseAudioChannel();
                 board.EnterWifiConfigMode();
                 break;
+            case WatchUi::Action::Models:
+                if (auto voice = dynamic_cast<CodexVoiceProtocol*>(protocol_.get())) {
+                    if (!voice->RefreshChats()) pending_watch_notification_ = "Connect to the Mac to refresh chats";
+                }
+                break;
             case WatchUi::Action::SelectModel:
                 if (auto voice = dynamic_cast<CodexVoiceProtocol*>(protocol_.get())) {
                     if (value >= 0 && voice->SelectModel(static_cast<size_t>(value))) {

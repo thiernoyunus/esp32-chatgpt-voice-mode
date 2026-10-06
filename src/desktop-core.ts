@@ -37,7 +37,7 @@ export class DesktopCodexProcess extends EventEmitter {
       .filter((name) => name.endsWith('.sock')).map((name) => join(directory, name))
       .filter((path) => { try { const stat = lstatSync(path);
         return stat.isSocket() && stat.uid === process.getuid?.() && (stat.mode & 0o077) === 0;
-      } catch { return false; } }) : [];
+      } catch { return false; } }).sort((a, b) => { try { return lstatSync(a).mtimeMs - lstatSync(b).mtimeMs; } catch { return 0; } }) : [];
     const connect = () => {
       const path = candidates.pop();
       if (this.killed) return;
@@ -93,8 +93,11 @@ export async function startDesktopCoreHost(executable: string, directory = deskt
         const child = spawn(executable, ['app-server', '--listen', 'stdio://', ...overrides,
           '-c', `mcp_servers.${DESKTOP_CORE_HOST_NAME}.enabled=false`,
           '-c', 'plugins.codex-app-tools@openai-bundled.mcp_servers.codex_app.enabled=true'],
-        { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
+        { cwd, stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env,
+          CODEX_MCP_NODE_PATH: process.execPath, CODEX_BROWSER_USE_NODE_PATH: process.execPath } });
         child.on('error', () => socket.destroy());
+        child.stdin.on('error', () => socket.destroy());
+        child.stdout.on('error', () => socket.destroy());
         child.on('exit', () => socket.end());
         child.stderr.on('data', (data) => process.stderr.write(data));
         child.stdout.pipe(socket);

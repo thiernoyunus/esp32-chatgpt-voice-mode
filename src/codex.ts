@@ -26,7 +26,6 @@ const CODEX_APP_SERVER_REQUEST_TIMEOUT_MILLISECONDS = 45_000;
 // disables discovery for the cooldown, not for the lifetime of the bridge.
 const VOICE_MODEL_CATALOG_FETCH_TIMEOUT_MILLISECONDS = 5_000;
 const VOICE_MODEL_CATALOG_FAILURE_COOLDOWN_MILLISECONDS = 30_000;
-const RECENT_CHAT_CACHE_LIFETIME_MILLISECONDS = 30_000;
 const CODEX_APP_SERVER_REALTIME_TIMEOUT_MILLISECONDS = 40_000;
 // Recent-chat picker size: the watch shows a short scrollable list, not a
 // full history browser.
@@ -1159,9 +1158,6 @@ export class CodexAppServerClient {
   #voiceModelCatalog: VoiceModelCatalogEntry[] | null = null;
   #voiceModelCatalogPromise: Promise<VoiceModelCatalogEntry[] | null> | null = null;
   #voiceModelCatalogRetryAfterMilliseconds = 0;
-  #recentChatList: VoiceChatChoice[] = [];
-  #recentChatListPromise: Promise<VoiceChatChoice[]> | null = null;
-  #recentChatListRefreshAfterMilliseconds = 0;
   #activityGeneration = 0;
   readonly #connectorMetadataCache: ConnectorMetadataCache;
   readonly #desktopConversationBridge = new DesktopConversationBridge();
@@ -1214,7 +1210,7 @@ export class CodexAppServerClient {
     }
     console.log(`Voice chat folder verified by Codex: ${storageRoot}`);
     console.log(`Codex is ready in ${this.workingDirectory}`);
-    void this.#refreshRealtimePickerData();
+    void this.#fetchVoiceModelCatalog();
   }
 
   async startRealtimeSession(
@@ -1435,7 +1431,7 @@ export class CodexAppServerClient {
           : modelSelection.choiceList;
       const selectedModel = modelOverrides.model;
       const chatList =
-        request.temporary === true ? [] : this.#readRecentChatsWithoutWaiting();
+        request.temporary === true ? [] : await this.listRecentChats();
       return {
         sdp: answerSdp,
         models: choiceList,
@@ -1992,7 +1988,7 @@ export class CodexAppServerClient {
 
   // Recent non-throwaway chats across Codex, so the watch can pick one from
   // any sidebar folder. A failed list only costs the picker, never the call.
-  async #listRecentChats(): Promise<VoiceChatChoice[]> {
+  async listRecentChats(): Promise<VoiceChatChoice[]> {
     const result = await this.#request(
       'thread/list',
       {
@@ -2007,33 +2003,6 @@ export class CodexAppServerClient {
       VOICE_MODEL_CATALOG_FETCH_TIMEOUT_MILLISECONDS,
     ).catch(() => undefined);
     return mergeRecentChatLists(readStateDatabaseChatList(), buildRecentChatList(result));
-  }
-
-  #readRecentChatsWithoutWaiting(): VoiceChatChoice[] {
-    void this.#refreshRecentChats();
-    return this.#recentChatList;
-  }
-
-  async #refreshRecentChats(): Promise<VoiceChatChoice[]> {
-    if (Date.now() < this.#recentChatListRefreshAfterMilliseconds) {
-      return this.#recentChatList;
-    }
-    if (this.#recentChatListPromise !== null) return this.#recentChatListPromise;
-    this.#recentChatListPromise = this.#listRecentChats()
-      .then((chatList) => {
-        this.#recentChatList = chatList;
-        this.#recentChatListRefreshAfterMilliseconds =
-          Date.now() + RECENT_CHAT_CACHE_LIFETIME_MILLISECONDS;
-        return chatList;
-      })
-      .finally(() => {
-        this.#recentChatListPromise = null;
-      });
-    return this.#recentChatListPromise;
-  }
-
-  async #refreshRealtimePickerData(): Promise<void> {
-    await Promise.all([this.#fetchVoiceModelCatalog(), this.#refreshRecentChats()]);
   }
 
   // Bounded catalog fetch with a short cooldown on failure. A transient

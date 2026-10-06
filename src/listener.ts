@@ -65,6 +65,8 @@ const realtimeOfferSchema = z.object({
   voice: z.string().min(1).max(32).optional(),
 });
 
+const chatListRequestSchema = z.object({ type: z.literal('chat_list_request'), requestId: z.string().min(1).max(64) });
+
 const realtimeStopSchema = z.object({
   type: z.literal('realtime_stop'),
   requestId: z.string().min(1),
@@ -117,6 +119,7 @@ export function repairDeviceOffer(sdp: string): string {
 /** What to do with one message the device sent us. */
 export type DeviceMessagePlan =
   | { readonly kind: 'voice_offer'; readonly offer: z.infer<typeof realtimeOfferSchema> }
+  | { readonly kind: 'chat_list'; readonly requestId: string }
   | { readonly kind: 'voice_stop'; readonly requestId: string }
   | { readonly kind: 'tool_reply'; readonly reply: DeviceMcpReply }
   | { readonly kind: 'drop'; readonly reason: string };
@@ -137,6 +140,8 @@ export function planDeviceMessage(rawText: string): DeviceMessagePlan {
   } catch {
     return { kind: 'drop', reason: 'not JSON' };
   }
+  const chatList = chatListRequestSchema.safeParse(parsed);
+  if (chatList.success) return { kind: 'chat_list', requestId: chatList.data.requestId };
   const offer = realtimeOfferSchema.safeParse(parsed);
   if (offer.success) {
     return { kind: 'voice_offer', offer: offer.data };
@@ -592,6 +597,12 @@ export async function runListener(
           if (send !== undefined) deviceTools.acceptReply(socket.data.deviceId, send, plan.reply);
           return;
         }
+        if (plan.kind === 'chat_list') {
+          void codexReady.then(() => codexClient.listRecentChats()).then(chats => {
+            sendToDevice(socket, encodeServerToDeviceMessage({ type: 'chat_list', requestId: plan.requestId, chats }));
+          }).catch(error => console.error(`Cannot refresh watch chats: ${error instanceof Error ? error.message : 'unknown error'}`));
+          return;
+        }
         if (plan.kind === 'voice_stop') {
           if (callSockets.get(plan.requestId) !== socket) return;
           void codexClient.stopRealtimeSession(plan.requestId);
@@ -681,7 +692,7 @@ export async function runListener(
                 models: result.models.length > 0 ? [...result.models] : undefined,
                 selectedModel: result.selectedModel ?? undefined,
                 threadId: result.threadId,
-                chats: result.chats.length > 0 ? [...result.chats] : undefined,
+                chats: [...result.chats],
               }),
             );
           })

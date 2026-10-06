@@ -6,7 +6,9 @@ app's project and task tools. The phone's native voice chat did receive them.
 
 The installer now registers a small companion that Codex desktop starts itself.
 The listener connects to it, and it starts the voice process with the desktop's
-app connection, configured tools, account and permissions. Codex desktop must be
+app connection, configured tools, account and permissions. The companion passes
+the desktop’s signed tool runtime to its children; the wrong runtime caused
+native project tools to be rejected in the full voice configuration. Codex desktop must be
 open. The companion exposes no model tools and disables itself in voice children
 so it cannot start recursively. Its connection folder and sockets are private to
 the current Mac user; startup messages are bounded and validated.
@@ -23,9 +25,10 @@ flowchart LR
 | Capability | Result |
 | --- | --- |
 | Desktop app tools | All 53 installed native app tools were discovered through the new connection. |
-| Project discovery and task creation | A saved voice-owned chat called the real `list_projects`, found Instagram page, and used `create_thread` to create a local task there. The new task finished with `hi`. |
+| Project discovery and task creation | The initial reduced-tool check listed projects and created a local task there. After the user reproduced failure with the full setup, the signed-runtime fix was checked with all configured tools enabled: a saved voice-owned chat called the real `list_projects` and found Instagram page. |
 | Configured tools and plugins | Configuration is inherited. Optional per-machine exclusions still apply; discovery alone does not prove every external account is signed in. |
 | Reasoning | Watch choice, then ESP environment preference, then Codex configuration, then low. Model selection is independent. Unsupported combinations fail clearly. |
+| Recent chat picker | Fetches fresh non-archived chats when opened, without starting audio. Empty responses clear old rows, and replies from older requests are ignored. Requires updated firmware. |
 | Unavailable saved chats | Archived or missing chats open a fresh saved chat, with a notice. Other setup errors remain visible. |
 | New and resumed reasoning | The installed Codex returned `high` for both a newly opened chat and a resumed saved voice chat, with its global preference set to `low`. |
 | Saved watch preference | Firmware sender check compiles the actual offer function and confirms each level is sent for new and resumed calls; Default sends no override. The watch change is included in this PR. |
@@ -56,6 +59,6 @@ This change does not establish complete phone/desktop parity:
 
 ## Validation
 
-Server: `bun run check` (216 passing). AMOLED 2.06 firmware build completed in the active unified checkout and produced `build/xiaozhi.bin`; the generated profile enables Codex Voice and the default display style. The device has not been flashed. Firmware sender:
+Server: `bun run check` (217 passing). AMOLED 2.06 firmware build, including the latest picker changes, completed in the active unified checkout and produced `build/xiaozhi.bin`; the generated profile enables Codex Voice and the default display style. The device has not been flashed. Firmware sender:
 `python3 firmware/scripts/tests/test_voice_reasoning.py` after firmware dependencies are
-available. `CJSON_SOURCE` can point to an existing cJSON component checkout. The existing host toolchain helper selects a working local SDK.
+available. `test_voice_messages.py` also checks picker refresh, stale replies and empty-list clearing. Both checks reuse the existing cJSON and host toolchain helpers.
