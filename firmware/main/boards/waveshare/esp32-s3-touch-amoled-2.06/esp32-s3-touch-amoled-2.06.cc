@@ -433,6 +433,10 @@ public:
         return backlight_;
     }
 
+    bool IsExternalPowerConnected() override {
+        return pmic_->IsExternalPowerConnected();
+    }
+
     virtual bool GetBatteryLevel(int &level, bool &charging, bool &discharging) override {
         charging = pmic_->IsCharging();
         discharging = pmic_->IsDischarging();

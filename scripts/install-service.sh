@@ -19,10 +19,14 @@ if [ -z "$BUN" ]; then
   exit 1
 fi
 
+# Register the companion inside Codex desktop. Its children then receive the
+# same app tools as a native voice chat, rather than an isolated CLI session.
+"$BUN" run "$ROOT/scripts/install-desktop-host.ts"
+
 # Machine-specific Codex settings are passed through from this shell rather
 # than committed, so nobody else inherits one person's model or plugin list.
 PASSTHROUGH=""
-for name in VOICEMODE_CODEX_MODEL VOICEMODE_CODEX_DISABLE_MCP VOICEMODE_CODEX_BIN VOICEMODE_CODEX_ROOT VOICEMODE_CODEX_CWD; do
+for name in VOICEMODE_CODEX_MODEL VOICEMODE_CODEX_REASONING_EFFORT VOICEMODE_CODEX_DISABLE_MCP VOICEMODE_CODEX_BIN VOICEMODE_CODEX_ROOT VOICEMODE_CODEX_CWD; do
   eval "value=\${$name:-}"
   if [ -n "$value" ]; then
     PASSTHROUGH="$PASSTHROUGH
@@ -73,6 +77,7 @@ done
 launchctl bootstrap "gui/$(id -u)" "$PLIST"
 
 echo "Installed $LABEL"
+echo "  Open Codex and start or resume a chat to activate its ESP companion."
 echo "  New chats follow Codex's projectless task folder unless VOICEMODE_CODEX_ROOT is set."
 echo "  Check for Voice chat folder verified by Codex before testing a call."
 echo "  logs:  tail -f /tmp/esp32-voice-mode.log"

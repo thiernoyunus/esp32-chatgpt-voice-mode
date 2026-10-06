@@ -1,4 +1,3 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { createConnection, type Socket } from 'node:net';
@@ -19,7 +18,7 @@ import { forwardActivityIcon, resolveIconPixels } from './icons';
 import { voiceStorageError } from './voice-storage';
 import { releaseVoiceChat } from './voice-release';
 import { classifyVoiceFailure } from './failures';
-import { resolveCodexExecutable } from './codex-executable';
+import { DesktopCodexProcess } from './desktop-core';
 
 const CODEX_APP_SERVER_REQUEST_TIMEOUT_MILLISECONDS = 45_000;
 // Catalog fetch is bounded well under the 30s realtime_offer readiness window so
@@ -27,7 +26,6 @@ const CODEX_APP_SERVER_REQUEST_TIMEOUT_MILLISECONDS = 45_000;
 // disables discovery for the cooldown, not for the lifetime of the bridge.
 const VOICE_MODEL_CATALOG_FETCH_TIMEOUT_MILLISECONDS = 5_000;
 const VOICE_MODEL_CATALOG_FAILURE_COOLDOWN_MILLISECONDS = 30_000;
-const RECENT_CHAT_CACHE_LIFETIME_MILLISECONDS = 30_000;
 const CODEX_APP_SERVER_REALTIME_TIMEOUT_MILLISECONDS = 40_000;
 // Recent-chat picker size: the watch shows a short scrollable list, not a
 // full history browser.
@@ -36,11 +34,8 @@ const RECENT_CHAT_LIST_SIZE = 20;
 /**
  * Settings handed to the Codex app-server at startup.
  *
- * Only one is universal: a voice call wants an answer quickly far more than it
- * wants a thorough one, so reasoning effort is pinned low no matter what the
- * user's own Codex config says.
- *
- * The other two are per-machine and default to nothing:
+ * Reasoning follows the device preference, then Codex configuration, then low.
+ * Model selection is independent; unsupported reasoning choices are rejected.
  *
  *   VOICEMODE_CODEX_MODEL        pin a model, e.g. gpt-6-luna. Left unset,
  *                                Codex uses whatever the user configured.
@@ -50,7 +45,7 @@ const RECENT_CHAT_LIST_SIZE = 20;
  *                                first call after a restart.
  */
 export function buildCodexOverrides(): string[] {
-  const overrides = ['-c', 'model_reasoning_effort="low"', '-c', 'thread_unload_delay_secs=0'];
+  const overrides = ['-c', 'thread_unload_delay_secs=0'];
   const model = process.env.VOICEMODE_CODEX_MODEL;
   if (model !== undefined && model.length > 0) {
     overrides.push('-c', `model="${model}"`);
@@ -67,7 +62,8 @@ const CODEX_DEVELOPER_INSTRUCTION_LIST = [
   'You are the local Codex agent behind the voice device on this desk.',
   'Answer the user directly in clear English. Keep the spoken answer short and conversational; do not use Markdown.',
   'Use the MCP servers and plugins configured on this Mac when they fit the request. Do not claim an action succeeded unless the tool confirms it.',
-  'When asked to check email without naming an account, review recent messages in every connected inbox and summarize the useful ones instead of stopping to ask which inbox first.',
+  'For Codex projects, folders, and chats, use the Codex app tools: list_projects to find the project, list_threads or read_thread to inspect chats, and create_thread to start a task in the requested project. Saved notes are not a live project list. If the app tools fail, report the tool error instead of claiming the folder is missing.',
+  'To create a local project task, call create_thread with target: { type: "project", projectId: the ID returned by list_projects, environment: { type: "local" } }, plus prompt and optional title. The projectId belongs inside target.',
   // Without naming it, the model answers questions about the device from
   // nowhere: asked its volume it will state a number it never looked up, and
   // asked to change it will say it did. Both were observed.
@@ -141,6 +137,7 @@ const realtimeTranscriptDeltaSchema = z.object({
 // choice id the device receives is `entry.model`, not the app-server's display
 // id — callers wire that into `thread/start` config and it must stay stable.
 export type VoiceModelCatalogEntry = {
+  readonly isDefault?: boolean;
   readonly model: string;
   readonly displayName: string | null;
   readonly supportedReasoningEffortList: readonly string[];
@@ -163,10 +160,8 @@ export type VoiceModelResolution =
   | {
       readonly kind: 'resolved';
       readonly entry: VoiceModelCatalogEntry;
-      readonly reasoningEffort: string | null;
     };
 
-const VOICE_MODEL_CATALOG_REASONING_PREFERENCE = ['low'] as const;
 const VOICE_MODEL_ID_MAX_LENGTH = 128;
 const VOICE_MODEL_NAME_MAX_LENGTH = 80;
 const VOICE_MODEL_CATALOG_MAX_LENGTH = 40;
@@ -183,6 +178,7 @@ const reasoningEffortSchema = z
 const modelListEntrySchema = z
   .object({
     model: z.string().min(1).max(VOICE_MODEL_ID_MAX_LENGTH),
+    isDefault: z.boolean().optional(),
     displayName: z.string().min(1).max(VOICE_MODEL_NAME_MAX_LENGTH).optional(),
     supportedReasoningEfforts: z.array(reasoningEffortSchema).optional(),
     defaultReasoningEffort: z.string().min(1).optional(),
@@ -212,6 +208,7 @@ export function parseVoiceModelCatalog(
     : parsed.data.data;
   return rawList.map((entry) => ({
     model: entry.model,
+    isDefault: entry.isDefault,
     displayName: entry.displayName ?? null,
     supportedReasoningEffortList: (entry.supportedReasoningEfforts ?? []).map(
       (entry) => entry.reasoningEffort,
@@ -375,18 +372,27 @@ type StateChatRow = {
   readonly project_name: string | null;
 };
 
+export function truncateWatchChatLabel(text: string): string {
+  let label = '';
+  for (const character of text) {
+    if (Buffer.byteLength(label + character, 'utf8') > 60) break;
+    label += character;
+  }
+  return label;
+}
+
 function folderLabel(
   sectionName: string | null | undefined,
   projectName: string | null | undefined,
   cwd: string | null | undefined,
 ): string | undefined {
   const section = sectionName?.trim();
-  if (section) return section.slice(0, 60);
+  if (section) return truncateWatchChatLabel(section);
   const project = projectName?.trim();
-  if (project) return project.slice(0, 60);
+  if (project) return truncateWatchChatLabel(project);
   const pathParts = cwd?.split('/').filter((part) => part.length > 0);
   const folder = pathParts?.at(-1)?.trim();
-  return folder === undefined || folder.length === 0 ? undefined : folder.slice(0, 60);
+  return folder === undefined || folder.length === 0 ? undefined : truncateWatchChatLabel(folder);
 }
 
 function readStateDatabaseChatList(): VoiceChatChoice[] {
@@ -419,7 +425,7 @@ function readStateDatabaseChatList(): VoiceChatChoice[] {
       if (label.length === 0) continue;
       chatList.push({
         id: row.id,
-        name: label.slice(0, 60),
+        name: truncateWatchChatLabel(label),
         folder: folderLabel(row.section_name, row.project_name, row.cwd),
       });
     }
@@ -515,7 +521,7 @@ export function buildRecentChatList(rawResponse: unknown): VoiceChatChoice[] {
     seenIdSet.add(thread.id);
     chatList.push({
       id: thread.id,
-      name: label.slice(0, 60),
+      name: truncateWatchChatLabel(label),
       folder: folderLabel(thread.section?.name, undefined, thread.cwd),
     });
     if (chatList.length >= RECENT_CHAT_LIST_SIZE) break;
@@ -523,20 +529,38 @@ export function buildRecentChatList(rawResponse: unknown): VoiceChatChoice[] {
   return chatList;
 }
 
-export function resolveReasoningEffortForEntry(
-  entry: VoiceModelCatalogEntry,
-): string | null {
-  const effortSet = new Set(entry.supportedReasoningEffortList);
-  for (const preferredEffort of VOICE_MODEL_CATALOG_REASONING_PREFERENCE) {
-    if (effortSet.has(preferredEffort)) return preferredEffort;
+export function clearPendingVoiceRequests(requests: Map<string, { params: DesktopIpcRecord }>, threadId?: string): void {
+  if (threadId === undefined) { requests.clear(); return; }
+  for (const [id, request] of requests) {
+    if (request.params.threadId === threadId) requests.delete(id);
   }
-  if (
-    entry.defaultReasoningEffort !== null &&
-    effortSet.has(entry.defaultReasoningEffort)
-  ) {
-    return entry.defaultReasoningEffort;
+}
+
+export function voiceReasoningEffort(device: string | undefined, configured: unknown): string {
+  return device ?? (process.env.VOICEMODE_CODEX_REASONING_EFFORT || undefined) ??
+    (typeof configured === 'string' && configured.length > 0 ? configured : 'low');
+}
+
+export function voiceThreadSettings(model: string | undefined, effort: string, catalog: readonly VoiceModelCatalogEntry[]): { model: string; reasoningEffort: string } {
+  const entry = model === undefined
+    ? catalog.find(candidate => candidate.isDefault)
+    : catalog.find(candidate => candidate.model === model);
+  if (!entry) throw new Error(`Cannot verify reasoning for voice model ${model ?? '(unset)'}. Check your Codex model setting.`);
+  if (!entry.supportedReasoningEffortList.includes(effort)) {
+    throw new Error(`Model ${entry.model} does not support reasoning ${effort}. Supported: ${entry.supportedReasoningEffortList.join(', ')}. Choose a supported level or another model.`);
   }
-  return entry.supportedReasoningEffortList[0] ?? null;
+  return { model: entry.model, reasoningEffort: effort };
+}
+
+export function voiceChatUnavailable(error: unknown): boolean {
+  return error instanceof Error && /not found|unknown thread|no rollout|does not exist|\bis archived\b/i.test(error.message);
+}
+
+export function voiceThreadConfig(settings?: { model: string; reasoningEffort: string }, realtime = true): Record<string, unknown> {
+  return {
+    ...(realtime ? { 'features.realtime_conversation': true } : {}),
+    ...(settings ? { model: settings.model, model_reasoning_effort: settings.reasoningEffort } : {}),
+  };
 }
 
 export function resolveVoiceModelSelection(
@@ -558,7 +582,6 @@ export function resolveVoiceModelSelection(
   return {
     kind: 'resolved',
     entry,
-    reasoningEffort: resolveReasoningEffortForEntry(entry),
   };
 }
 
@@ -591,6 +614,33 @@ function desktopIpcRecord(value: unknown): DesktopIpcRecord | null {
 
 function desktopIpcString(value: unknown): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+/** Only a matching reply to the outstanding question may unblock a tool. */
+export function voiceRequestResponse(method: string, params: DesktopIpcRecord, requestMethod: string): unknown {
+  const matches: Record<string, string> = {
+    'thread-follower-command-approval-decision': 'item/commandExecution/requestApproval',
+    'thread-follower-file-approval-decision': 'item/fileChange/requestApproval',
+    'thread-follower-permissions-request-approval-response': 'item/permissions/requestApproval',
+    'thread-follower-submit-user-input': 'item/tool/requestUserInput',
+    'thread-follower-submit-mcp-server-elicitation-response': 'mcpServer/elicitation/request',
+  };
+  if (matches[method] !== requestMethod) throw new Error('This reply does not match the pending Codex request.');
+  if (method.endsWith('approval-decision')) {
+    const decision = z.union([z.enum(['accept', 'acceptForSession', 'decline', 'cancel']),
+      z.object({ acceptWithExecpolicyAmendment: z.record(z.unknown()) }).strict(),
+      z.object({ applyNetworkPolicyAmendment: z.record(z.unknown()) }).strict()]).parse(params.decision);
+    return { decision };
+  }
+  if (method === 'thread-follower-submit-user-input') {
+    return z.object({ answers: z.record(z.object({ answers: z.array(z.string()) })) }).parse(params.response);
+  }
+  if (method === 'thread-follower-submit-mcp-server-elicitation-response') {
+    return z.object({ action: z.enum(['accept', 'decline', 'cancel']),
+      content: z.record(z.unknown()).nullable().optional(), _meta: z.record(z.unknown()).nullable().optional(),
+    }).parse(params.response);
+  }
+  return z.object({ permissions: z.record(z.unknown()), scope: z.enum(['turn', 'session']) }).parse(params.response);
 }
 
 export function desktopConversationDates(thread: DesktopIpcRecord, nowMs = Date.now()) {
@@ -692,6 +742,7 @@ export class DesktopConversationBridge {
     string,
     {
       readonly provider: DesktopConversationStateProvider;
+      readonly respond?: (method: string, params: DesktopIpcRecord) => void;
       readonly followerClientIdSet: Set<string>;
       revision: number;
     }
@@ -723,10 +774,12 @@ export class DesktopConversationBridge {
     this.#connected = false;
   }
 
-  registerThread(threadId: string, provider: DesktopConversationStateProvider): void {
+  registerThread(threadId: string, provider: DesktopConversationStateProvider,
+    respond?: (method: string, params: DesktopIpcRecord) => void): void {
     const existing = this.#threads.get(threadId);
     this.#threads.set(threadId, {
       provider,
+      respond,
       followerClientIdSet: existing?.followerClientIdSet ?? new Set(),
       revision: existing?.revision ?? 0,
     });
@@ -999,14 +1052,16 @@ export class DesktopConversationBridge {
       return;
     }
     if (method !== 'thread-follower-load-complete-history') {
-      // Starting turns, approving commands and changing chat settings all act
-      // on a live session, which the device drives through its own controls.
-      this.#send({
-        type: 'response',
-        requestId: message.requestId,
-        resultType: 'error',
-        error: `not-supported-by-voice-bridge: ${method}`,
-      });
+      try {
+        if (!thread.respond || !params) throw new Error(`not-supported-by-voice-bridge: ${method}`);
+        thread.respond(method, params);
+        this.publish(threadId);
+        this.#send({ type: 'response', requestId: message.requestId, method,
+          resultType: 'success', handledByClientId: this.#sourceClientId, result: {} });
+      } catch (error) {
+        this.#send({ type: 'response', requestId: message.requestId, resultType: 'error',
+          error: error instanceof Error ? error.message : 'Invalid Codex reply' });
+      }
       return;
     }
     const requesterClientId = desktopIpcString(message.sourceClientId);
@@ -1100,8 +1155,9 @@ export type ActiveRealtimeSession = {
 
 
 export class CodexAppServerClient {
+  readonly #serverRequests = new Map<string, { id: string | number; method: string; params: DesktopIpcRecord }>();
   readonly #markedCallStartedThreadIdSet = new Set<string>();
-  readonly #process: ChildProcessWithoutNullStreams;
+  readonly #process: DesktopCodexProcess;
   readonly #readlineInterface: Interface;
   readonly #pendingRequestMap = new Map<number, PendingCodexRequest>();
   #nextRequestId = 1;
@@ -1118,25 +1174,12 @@ export class CodexAppServerClient {
   #voiceModelCatalog: VoiceModelCatalogEntry[] | null = null;
   #voiceModelCatalogPromise: Promise<VoiceModelCatalogEntry[] | null> | null = null;
   #voiceModelCatalogRetryAfterMilliseconds = 0;
-  #recentChatList: VoiceChatChoice[] = [];
-  #recentChatListPromise: Promise<VoiceChatChoice[]> | null = null;
-  #recentChatListRefreshAfterMilliseconds = 0;
   #activityGeneration = 0;
   readonly #connectorMetadataCache: ConnectorMetadataCache;
   readonly #desktopConversationBridge = new DesktopConversationBridge();
 
   constructor(readonly workingDirectory: string) {
-    const codexExecutable = resolveCodexExecutable().path;
-    const appServerArguments = [
-      'app-server',
-      '--listen',
-      'stdio://',
-      ...buildCodexOverrides(),
-    ];
-    this.#process = spawn(codexExecutable, appServerArguments, {
-      cwd: workingDirectory,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
+    this.#process = new DesktopCodexProcess(workingDirectory, buildCodexOverrides());
     this.#readlineInterface = createInterface({ input: this.#process.stdout });
     this.#readlineInterface.on('line', (line) => this.#handleLine(line));
     this.#process.stderr.on('data', (chunk) => process.stderr.write(chunk));
@@ -1145,6 +1188,7 @@ export class CodexAppServerClient {
         this.#request('app/read', { appIds: [connectorId], includeTools: false }, timeoutMilliseconds),
     );
     this.#process.on('exit', (code) => {
+      clearPendingVoiceRequests(this.#serverRequests);
       const error = new Error(`Codex app-server stopped${code === null ? '' : ` (${code})`}.`);
       for (const pendingRequest of this.#pendingRequestMap.values()) {
         clearTimeout(pendingRequest.timeout);
@@ -1183,7 +1227,7 @@ export class CodexAppServerClient {
     }
     console.log(`Voice chat folder verified by Codex: ${storageRoot}`);
     console.log(`Codex is ready in ${this.workingDirectory}`);
-    void this.#refreshRealtimePickerData();
+    void this.#fetchVoiceModelCatalog();
   }
 
   async startRealtimeSession(
@@ -1266,13 +1310,17 @@ export class CodexAppServerClient {
       if (this.#activeRealtimeSession !== activeSession) {
         throw new Error('ChatGPT Voice session stopped during setup.');
       }
-      const modelOverrides =
+      const settings = desktopIpcRecord(await this.#request('config/read', {
+        cwd: this.workingDirectory, includeLayers: false,
+      }));
+      const configured = desktopIpcRecord(settings?.config);
+      const modelOverrides = voiceThreadSettings(
         modelSelection.resolution.kind === 'resolved'
-          ? {
-              model: modelSelection.resolution.entry.model,
-              reasoningEffort: modelSelection.resolution.reasoningEffort,
-            }
-          : undefined;
+          ? modelSelection.resolution.entry.model
+          : desktopIpcString(configured?.model) ?? undefined,
+        voiceReasoningEffort(request.reasoningEffort, configured?.model_reasoning_effort),
+        modelSelection.catalog ?? await this.#fetchVoiceModelCatalog() ?? [],
+      );
       if (reusedThreadId !== null) {
         // Releasing a failed call unloads its chat. Reopen it before retrying;
         // if it is gone, let the normal fresh-chat path take over.
@@ -1398,12 +1446,9 @@ export class CodexAppServerClient {
         modelSelection.resolution.kind === 'resolved' && modelSelection.catalog !== null
           ? buildVoiceModelChoiceList(modelSelection.catalog)
           : modelSelection.choiceList;
-      const selectedModel =
-        modelSelection.resolution.kind === 'resolved'
-          ? modelSelection.resolution.entry.model
-          : null;
+      const selectedModel = modelOverrides.model;
       const chatList =
-        request.temporary === true ? [] : this.#readRecentChatsWithoutWaiting();
+        request.temporary === true ? [] : await this.listRecentChats();
       return {
         sdp: answerSdp,
         models: choiceList,
@@ -1459,6 +1504,7 @@ export class CodexAppServerClient {
   async #releaseThread(threadId: string): Promise<void> {
     const startedAt = Date.now();
     if (await releaseVoiceChat((method, params) => this.#request(method, params), threadId)) {
+      clearPendingVoiceRequests(this.#serverRequests, threadId);
       console.log(`Voice chat released: ${threadId} in ${Date.now() - startedAt} ms.`);
       this.#desktopConversationBridge.invalidate(threadId);
       this.#desktopConversationBridge.publish(threadId);
@@ -1531,13 +1577,19 @@ export class CodexAppServerClient {
       return;
     }
     if (message.id !== undefined) {
-      this.#answerServerRequest(message.id, message.method);
+      this.#answerServerRequest(message.id, message.method, message.params);
       return;
     }
     this.#handleNotification(message.method, message.params);
   }
 
   #handleNotification(method: string, params: unknown): void {
+    if (method === 'serverRequest/resolved') {
+      const resolved = desktopIpcRecord(params);
+      this.#serverRequests.delete(String(resolved?.requestId));
+      const threadId = desktopIpcString(resolved?.threadId);
+      if (threadId) this.#desktopConversationBridge.publish(threadId);
+    }
     const activity = readRealtimeActivity(method, params);
     const realtimeSession = this.#activeRealtimeSession;
     if (activity !== null && realtimeSession?.threadId === activity.threadId) {
@@ -1705,24 +1757,12 @@ export class CodexAppServerClient {
     enableRealtime = false,
     modelOverrides?: {
       readonly model: string;
-      readonly reasoningEffort: string | null;
+      readonly reasoningEffort: string;
     },
     ephemeral = true,
   ): Promise<string> {
     const scratchFolder = this.#voiceChatFolder();
-    const config: Record<string, unknown> = {};
-    if (enableRealtime) {
-      config['features.realtime_conversation'] = true;
-    }
-    if (modelOverrides !== undefined) {
-      // Voice selection rides on the backing thread, never on the realtime
-      // session itself — `thread/realtime/start` voice/outputModality stay
-      // default so the device audio path is untouched.
-      config.model = modelOverrides.model;
-      if (modelOverrides.reasoningEffort !== null) {
-        config.model_reasoning_effort = modelOverrides.reasoningEffort;
-      }
-    }
+    const config = voiceThreadConfig(modelOverrides, enableRealtime);
     const threadResult = await this.#request('thread/start', {
       cwd: scratchFolder,
       developerInstructions: buildCodexDeveloperInstructions(),
@@ -1735,9 +1775,7 @@ export class CodexAppServerClient {
     const threadId = z
       .object({ thread: z.object({ id: z.string().min(1) }) })
       .parse(threadResult).thread.id;
-    this.#desktopConversationBridge.registerThread(threadId, () =>
-      this.#buildConversationState(threadId),
-    );
+    this.#registerThread(threadId, threadResult);
     if (!ephemeral) {
       this.#desktopConversationBridge.invalidate();
       this.#desktopConversationBridge.publish(threadId);
@@ -1818,9 +1856,10 @@ export class CodexAppServerClient {
       });
     const dates = desktopConversationDates(thread);
     const cwd = desktopIpcString(thread.cwd) ?? this.workingDirectory;
-    const model = desktopIpcString(thread.latestModel) ??
+    const settings = this.#threadSettings.get(threadId);
+    const model = desktopIpcString(settings?.model) ?? desktopIpcString(thread.latestModel) ??
       process.env.VOICEMODE_CODEX_MODEL ?? null;
-    const reasoningEffort = desktopIpcString(thread.latestReasoningEffort) ?? 'low';
+    const reasoningEffort = desktopIpcString(settings?.reasoningEffort) ?? desktopIpcString(thread.latestReasoningEffort) ?? null;
     const collaborationMode = desktopIpcRecord(thread.latestCollaborationMode) ?? {
       mode: 'default',
       settings: {
@@ -1849,11 +1888,12 @@ export class CodexAppServerClient {
       hostId: 'local',
       turns: desktopVoiceTurns(realtimeEntries, {
         threadId, cwd, model, effort: reasoningEffort,
-        approvalPolicy: 'never', approvalsReviewer: 'user',
-        sandboxPolicy: { type: 'dangerFullAccess' },
+        approvalPolicy: settings?.approvalPolicy ?? null, approvalsReviewer: settings?.approvalsReviewer ?? 'user',
+        sandboxPolicy: settings?.sandbox ?? null,
         summary: 'none', personality: null, outputSchema: null, collaborationMode,
       }, liveSegments),
-      requests: [],
+      requests: [...this.#serverRequests.values()].filter((request) => request.params.threadId === threadId)
+        .map((request) => ({ ...request, id: String(request.id) })),
       ...dates,
       title: desktopIpcString(thread.name) ?? desktopIpcString(thread.title) ?? 'Desk voice chat',
       originator: desktopIpcString(thread.originator) ?? 'esp32_voice_mode',
@@ -1900,15 +1940,15 @@ export class CodexAppServerClient {
       currentPermissions: thread.currentPermissions ?? null,
       latestThreadSettings: thread.latestThreadSettings ?? {
         cwd,
-        approvalPolicy: 'never',
-        approvalsReviewer: 'user',
-        activePermissionProfile: null,
-        sandboxPolicy: { type: 'dangerFullAccess' },
+        approvalPolicy: settings?.approvalPolicy ?? null,
+        approvalsReviewer: settings?.approvalsReviewer ?? 'user',
+        activePermissionProfile: settings?.activePermissionProfile ?? null,
+        sandboxPolicy: settings?.sandbox ?? null,
         permissions: null,
         model,
-        serviceTier: null,
+        serviceTier: settings?.serviceTier ?? null,
         effort: reasoningEffort,
-        multiAgentMode: 'explicitRequestOnly',
+        multiAgentMode: settings?.multiAgentMode ?? 'explicitRequestOnly',
         collaborationMode: {
           mode: 'default',
           settings: {
@@ -1934,18 +1974,10 @@ export class CodexAppServerClient {
     threadId: string,
     modelOverrides?: {
       readonly model: string;
-      readonly reasoningEffort: string | null;
+      readonly reasoningEffort: string;
     },
   ): Promise<string | null> {
-    const config: Record<string, unknown> = {
-      'features.realtime_conversation': true,
-    };
-    if (modelOverrides !== undefined) {
-      config.model = modelOverrides.model;
-      if (modelOverrides.reasoningEffort !== null) {
-        config.model_reasoning_effort = modelOverrides.reasoningEffort;
-      }
-    }
+    const config = voiceThreadConfig(modelOverrides);
     return this.#request('thread/resume', {
       threadId,
       developerInstructions: buildCodexDeveloperInstructions(),
@@ -1956,19 +1988,25 @@ export class CodexAppServerClient {
           const resumedThreadId = z
             .object({ thread: z.object({ id: z.string().min(1) }) })
             .parse(result).thread.id;
-          this.#desktopConversationBridge.registerThread(resumedThreadId, () =>
-            this.#buildConversationState(resumedThreadId),
-          );
+          this.#registerThread(resumedThreadId, result);
           this.#desktopConversationBridge.invalidate(resumedThreadId);
           return resumedThreadId;
         },
       )
-      .catch(() => null);
+      .catch((error: unknown) => {
+        if (voiceChatUnavailable(error)) {
+          const session = this.#activeRealtimeSession;
+          session?.onTranscript({ type: 'realtime_status', requestId: session.requestId,
+            caption: 'Chat unavailable; starting a new chat', icon: 'none' });
+          return null;
+        }
+        throw error;
+      });
   }
 
   // Recent non-throwaway chats across Codex, so the watch can pick one from
   // any sidebar folder. A failed list only costs the picker, never the call.
-  async #listRecentChats(): Promise<VoiceChatChoice[]> {
+  async listRecentChats(): Promise<VoiceChatChoice[]> {
     const result = await this.#request(
       'thread/list',
       {
@@ -1983,33 +2021,6 @@ export class CodexAppServerClient {
       VOICE_MODEL_CATALOG_FETCH_TIMEOUT_MILLISECONDS,
     ).catch(() => undefined);
     return mergeRecentChatLists(readStateDatabaseChatList(), buildRecentChatList(result));
-  }
-
-  #readRecentChatsWithoutWaiting(): VoiceChatChoice[] {
-    void this.#refreshRecentChats();
-    return this.#recentChatList;
-  }
-
-  async #refreshRecentChats(): Promise<VoiceChatChoice[]> {
-    if (Date.now() < this.#recentChatListRefreshAfterMilliseconds) {
-      return this.#recentChatList;
-    }
-    if (this.#recentChatListPromise !== null) return this.#recentChatListPromise;
-    this.#recentChatListPromise = this.#listRecentChats()
-      .then((chatList) => {
-        this.#recentChatList = chatList;
-        this.#recentChatListRefreshAfterMilliseconds =
-          Date.now() + RECENT_CHAT_CACHE_LIFETIME_MILLISECONDS;
-        return chatList;
-      })
-      .finally(() => {
-        this.#recentChatListPromise = null;
-      });
-    return this.#recentChatListPromise;
-  }
-
-  async #refreshRealtimePickerData(): Promise<void> {
-    await Promise.all([this.#fetchVoiceModelCatalog(), this.#refreshRecentChats()]);
   }
 
   // Bounded catalog fetch with a short cooldown on failure. A transient
@@ -2116,36 +2127,45 @@ export class CodexAppServerClient {
 
 
 
-  #answerServerRequest(id: string | number, method: string): void {
-    // ponytail: phase 1 declines Codex-side approvals; map these to the device's
-    // device confirmation flow before allowing risky remote actions.
-    const response = (() => {
-      switch (method) {
-        case 'item/commandExecution/requestApproval':
-        case 'item/fileChange/requestApproval':
-        case 'applyPatchApproval':
-        case 'execCommandApproval':
-          return { decision: 'decline' };
-        case 'item/permissions/requestApproval':
-          return { permissions: {}, scope: 'turn' };
-        case 'item/tool/requestUserInput':
-          return { answers: {} };
-        case 'mcpServer/elicitation/request':
-          return { action: 'decline', content: null, _meta: null };
-        case 'currentTime/read':
-          return { currentTimeAt: Math.floor(Date.now() / 1000) };
-        default:
-          console.error(`Codex bridge does not support server request: ${method}`);
-          return undefined;
-      }
-    })();
-    if (response === undefined) {
-      this.#send({
-        id,
-        error: { code: -32601, message: `Unsupported Codex server request: ${method}` },
+  #threadSettings = new Map<string, DesktopIpcRecord>();
+
+  #registerThread(threadId: string, settings?: unknown): void {
+    const record = desktopIpcRecord(settings);
+    if (record) this.#threadSettings.set(threadId, record);
+    this.#desktopConversationBridge.registerThread(threadId, () => this.#buildConversationState(threadId),
+      (method, params) => {
+        const key = String(params.requestId);
+        const request = this.#serverRequests.get(key);
+        if (!request || request.params.threadId !== threadId) throw new Error('This Codex request is no longer pending.');
+        const result = voiceRequestResponse(method, params, request.method);
+        this.#serverRequests.delete(key);
+        this.#send({ id: request.id, result });
       });
+  }
+
+  #answerServerRequest(id: string | number, method: string, rawParams: unknown): void {
+    if (method === 'currentTime/read') {
+      this.#send({ id, result: { currentTimeAt: Math.floor(Date.now() / 1000) } });
       return;
     }
-    this.#send({ id, result: response });
+    const interactiveMethods = ['item/commandExecution/requestApproval', 'item/fileChange/requestApproval',
+      'item/permissions/requestApproval', 'item/tool/requestUserInput', 'mcpServer/elicitation/request'];
+    const params = desktopIpcRecord(rawParams);
+    const threadId = desktopIpcString(params?.threadId) ?? this.#activeRealtimeSession?.threadId;
+    if (interactiveMethods.includes(method) && params && threadId) {
+      this.#serverRequests.set(String(id), { id, method, params: { ...params, threadId } });
+      this.#desktopConversationBridge.publish(threadId);
+      const session = this.#activeRealtimeSession;
+      if (session?.threadId === threadId) {
+        session.onTranscript({ type: 'realtime_status', requestId: session.requestId,
+          caption: 'Answer in Codex', icon: 'none' });
+        void this.#request('thread/realtime/appendText', { threadId, role: 'developer',
+          text: 'A tool is waiting for the person to answer a question or approve an action. Tell them briefly to open this voice chat in Codex on their phone or desktop to answer. Do not claim the action was refused or completed.'
+        }).catch(() => undefined);
+      }
+      return;
+    }
+    console.error(`Codex bridge does not support server request: ${method}`);
+    this.#send({ id, error: { code: -32601, message: `Unsupported Codex server request: ${method}` } });
   }
 }

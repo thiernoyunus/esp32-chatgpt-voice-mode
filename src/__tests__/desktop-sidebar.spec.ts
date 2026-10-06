@@ -1,10 +1,23 @@
 import { expect, test } from 'bun:test';
+import { voiceChatListSchema } from '../protocol';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { createServer, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { DesktopConversationBridge, desktopConversationDates, desktopVoiceTurns } from '../codex';
+import { DesktopConversationBridge, desktopConversationDates, desktopVoiceTurns, voiceRequestResponse, clearPendingVoiceRequests, truncateWatchChatLabel } from '../codex';
+
+test('Codex answers are preserved and cannot approve a different kind of request', () => {
+  expect(voiceRequestResponse('thread-follower-command-approval-decision', { decision: 'accept' },
+    'item/commandExecution/requestApproval')).toEqual({ decision: 'accept' });
+  const response = { answers: { project: { answers: ['Instagram page'] } } };
+  expect(voiceRequestResponse('thread-follower-submit-user-input', { response },
+    'item/tool/requestUserInput')).toEqual(response);
+  expect(() => voiceRequestResponse('thread-follower-command-approval-decision', { decision: 'accept' },
+    'item/tool/requestUserInput')).toThrow('does not match');
+  expect(() => voiceRequestResponse('thread-follower-command-approval-decision', { decision: 'yes' },
+    'item/commandExecution/requestApproval')).toThrow();
+});
 
 test('saved speech becomes visible chat messages without starting an agent turn', () => {
   const entries = [
@@ -105,11 +118,23 @@ test('only explicitly saved chats send a targeted desktop refresh', async () => 
     bridge.start();
     await waitFor(() => messages.filter((message) => message.method === 'query-cache-invalidate').length === 3);
     messages.length = 0;
-    bridge.registerThread('saved-chat', async () => ({}));
+    const replies: unknown[] = [];
+    bridge.registerThread('saved-chat', async () => ({}), (method, params) => {
+      replies.push(voiceRequestResponse(method, params, 'item/commandExecution/requestApproval'));
+    });
     bridge.registerThread('temporary-chat', async () => ({}));
     bridge.invalidate('unknown-chat');
     await waitFor(() => messages.filter((message) => message.method === 'query-cache-invalidate').length === 9);
     expect(messages.some((message) => message.method === 'thread-unarchived')).toBe(false);
+    const reply = Buffer.from(JSON.stringify({ type: 'request', requestId: 'approval-answer',
+      method: 'thread-follower-command-approval-decision',
+      params: { conversationId: 'saved-chat', requestId: 'approval-1', decision: 'accept' } }));
+    const frame = Buffer.alloc(reply.length + 4);
+    frame.writeUInt32LE(reply.length); reply.copy(frame, 4); peer!.write(frame);
+    await waitFor(() => messages.some(message => message.requestId === 'approval-answer'));
+    expect(replies).toEqual([{ decision: 'accept' }]);
+    expect(messages.find(message => message.requestId === 'approval-answer')?.resultType).toBe('success');
+
 
     bridge.invalidate('saved-chat');
     await waitFor(() => messages.some((message) => message.method === 'thread-unarchived'));
@@ -124,4 +149,25 @@ test('only explicitly saved chats send a targeted desktop refresh', async () => 
     await new Promise<void>((resolve) => server.close(() => resolve()));
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+
+test('released chats drop only their pending requests; a dead process drops all', () => {
+  const requests = new Map([['one', { params: { threadId: 'first' } }], ['two', { params: { threadId: 'second' } }]]);
+  clearPendingVoiceRequests(requests, 'first');
+  expect([...requests.keys()]).toEqual(['two']);
+  clearPendingVoiceRequests(requests);
+  expect(requests.size).toBe(0);
+});
+
+test('watch chat names preserve whole characters within the firmware byte limit', () => {
+  for (const text of ['😀'.repeat(21), 'م'.repeat(60), '漢'.repeat(60), 'a'.repeat(61)]) {
+    const label = truncateWatchChatLabel(text);
+    expect(Buffer.byteLength(label, 'utf8')).toBeLessThanOrEqual(60);
+    expect(text.startsWith(label)).toBe(true);
+    expect(label).not.toContain('�');
+  }
+  expect(truncateWatchChatLabel('😀'.repeat(21))).toBe('😀'.repeat(15));
+  expect(voiceChatListSchema.safeParse([{ id: 'chat', name: '😀'.repeat(21) }]).success).toBe(false);
+  expect(voiceChatListSchema.safeParse([{ id: 'chat', name: truncateWatchChatLabel('😀'.repeat(21)), folder: truncateWatchChatLabel('漢'.repeat(60)) }]).success).toBe(true);
 });
