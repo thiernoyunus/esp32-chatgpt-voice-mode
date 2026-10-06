@@ -92,6 +92,7 @@ bool Application::SetVoiceCharacter(int shape, int colour) {
 }
 
 bool Application::SetUiTheme(int theme) {
+    if (theme < 0) return true;
     Settings s("display", true);
     s.SetInt("ui_theme", std::clamp(theme, 0, watch_palette::kThemeCount - 1));
     // The watch draws its own colours, so changing the saved value is not
