@@ -42,6 +42,12 @@ protected:
     lv_obj_t* voice_mute_icon_ = nullptr;
     lv_obj_t* voice_end_button_ = nullptr;
     lv_obj_t* voice_orb_canvas_ = nullptr;
+    // The arrow and the three dots, in the order they are created.
+    lv_obj_t* voice_nav_buttons_[2] = {nullptr, nullptr};
+    int voice_orb_size_ = 0;
+    // Where the current finger went down, for the bottom-edge swipe home.
+    int swipe_start_x_ = 0, swipe_start_y_ = 0;
+    bool swipe_pressed_ = false;
     lv_obj_t* voice_state_caption_ = nullptr;
     lv_timer_t* voice_orb_timer_ = nullptr;
     lv_color16_t* voice_orb_buffer_ = nullptr;
@@ -78,6 +84,7 @@ protected:
     uint32_t voice_state_caption_color_ = 0;
 
     void RenderVoiceOrb(float seconds);
+    void TrackSwipe(lv_indev_state_t state, int x, int y);
     bool AdvanceWorkingCycle();
     void UpdateVoiceStateCaption(const char* text, uint32_t color);
     void ShowVoiceToolCaption(bool tool);

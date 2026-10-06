@@ -799,6 +799,14 @@ void WatchUi::SetCallActive(bool active){
     if(active&&!call_active_&&page_==Page::Home)Show(Page::Voice);
     call_active_=active;
 }
+void WatchUi::GoHome(){
+    // Ending the call first is not optional on the call screen: the hang-up
+    // button only exists there, so leaving it on screen would strand the call
+    // with nothing to stop it.
+    if(page_==Page::Voice) Emit(Action::EndCall);
+    Show(Page::Home);
+    Emit(Action::Refresh);
+}
 void WatchUi::ChooseNetwork(const std::string& ssid){
     join_ssid_=ssid;
     if(std::find(info_.saved_networks.begin(),info_.saved_networks.end(),ssid)!=info_.saved_networks.end()){

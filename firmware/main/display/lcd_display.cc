@@ -495,10 +495,14 @@ void LcdDisplay::SetupUI() {
     lv_obj_set_style_bg_grad_color(voice_root_, lv_color_hex(0x000000), 0);
     lv_obj_set_style_bg_grad_dir(voice_root_, LV_GRAD_DIR_NONE, 0);
     lv_obj_set_style_bg_opa(voice_root_, LV_OPA_COVER, 0);
-    // Both supported watches share the 360px Codex layout. Centre it on the
-    // taller AMOLED panel while retaining the old LCD's exact coordinates.
-    lv_obj_set_size(voice_root_, 360, 360);
-    lv_obj_set_pos(voice_root_, (width_ - 360) / 2, (height_ - 360) / 2);
+    /* The round watch is 360x360 and gets exactly that. The AMOLED is
+     * 410x502, and it now fills it: the call screen used to be the old square
+     * parked in the middle, so the character was two thirds of the size it
+     * could have been and sat between two bands of empty black. */
+    const bool wide = width_ > 360;
+    const int view_w = wide ? width_ : 360, view_h = wide ? height_ : 360;
+    lv_obj_set_size(voice_root_, view_w, view_h);
+    lv_obj_set_pos(voice_root_, (width_ - view_w) / 2, (height_ - view_h) / 2);
     lv_obj_set_style_pad_all(voice_root_, 0, 0);
     lv_obj_set_style_border_width(voice_root_, 0, 0);
     lv_obj_set_style_radius(voice_root_, 0, 0);
@@ -510,7 +514,7 @@ void LcdDisplay::SetupUI() {
 
     /* Container - used as background */
     container_ = lv_obj_create(screen);
-    lv_obj_set_size(container_, 360, 360);
+    lv_obj_set_size(container_, view_w, view_h);
     lv_obj_set_style_radius(container_, 0, 0);
     lv_obj_set_style_pad_all(container_, 0, 0);
     lv_obj_set_style_border_width(container_, 0, 0);
@@ -542,7 +546,7 @@ void LcdDisplay::SetupUI() {
 
     /* Layer 1: Top bar - for status icons */
     top_bar_ = lv_obj_create(screen);
-    lv_obj_set_size(top_bar_, 360, LV_SIZE_CONTENT);
+    lv_obj_set_size(top_bar_, view_w, LV_SIZE_CONTENT);
     lv_obj_set_style_radius(top_bar_, 0, 0);
     lv_obj_set_style_bg_opa(top_bar_, LV_OPA_50, 0);  // 50% opacity background
     lv_obj_set_style_bg_color(top_bar_, lvgl_theme->background_color(), 0);
@@ -721,8 +725,12 @@ void LcdDisplay::SetupUI() {
     voice_tool_active_ = false;
 
     lv_obj_add_flag(emoji_label_, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_set_size(emoji_box_, voice_geometry::kOrbSize, voice_geometry::kOrbSize);
-    lv_obj_align(emoji_box_, LV_ALIGN_CENTER, 0, 4);
+    // Bigger on the AMOLED, and dead centre instead of nudged down four
+    // pixels from the middle of a square that was smaller than the screen.
+    voice_orb_size_ = wide ? voice_geometry::amoled_voice::kOrbSize
+                           : voice_geometry::kOrbSize;
+    lv_obj_set_size(emoji_box_, voice_orb_size_, voice_orb_size_);
+    lv_obj_align(emoji_box_, LV_ALIGN_CENTER, 0, wide ? 0 : 4);
     lv_obj_set_style_radius(emoji_box_, 0, 0);
     lv_obj_set_style_clip_corner(emoji_box_, false, 0);
     lv_obj_set_style_bg_opa(emoji_box_, LV_OPA_TRANSP, 0);
@@ -732,8 +740,8 @@ void LcdDisplay::SetupUI() {
     lv_obj_set_style_bg_grad_color(emoji_box_, lv_color_hex(0x000000), 0);
     lv_obj_set_style_bg_grad_dir(emoji_box_, LV_GRAD_DIR_NONE, 0);
 
-    const size_t orb_buffer_size = static_cast<size_t>(voice_geometry::kOrbSize) *
-                                   voice_geometry::kOrbSize * sizeof(lv_color16_t);
+    const size_t orb_buffer_size = static_cast<size_t>(voice_orb_size_) *
+                                   voice_orb_size_ * sizeof(lv_color16_t);
     voice_orb_buffer_ = static_cast<lv_color16_t*>(
         heap_caps_malloc(orb_buffer_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     if (voice_orb_buffer_ == nullptr) {
@@ -743,9 +751,9 @@ void LcdDisplay::SetupUI() {
     if (voice_orb_buffer_ != nullptr) {
         voice_orb_canvas_ = lv_canvas_create(emoji_box_);
         if (voice_orb_canvas_ != nullptr) {
-            lv_canvas_set_buffer(voice_orb_canvas_, voice_orb_buffer_, voice_geometry::kOrbSize,
-                                 voice_geometry::kOrbSize, LV_COLOR_FORMAT_RGB565);
-            lv_obj_set_size(voice_orb_canvas_, voice_geometry::kOrbSize, voice_geometry::kOrbSize);
+            lv_canvas_set_buffer(voice_orb_canvas_, voice_orb_buffer_, voice_orb_size_,
+                                 voice_orb_size_, LV_COLOR_FORMAT_RGB565);
+            lv_obj_set_size(voice_orb_canvas_, voice_orb_size_, voice_orb_size_);
             lv_obj_align(voice_orb_canvas_, LV_ALIGN_CENTER, 0, 0);
             lv_obj_set_style_radius(voice_orb_canvas_, 0, 0);
             lv_obj_set_style_clip_corner(voice_orb_canvas_, false, 0);
@@ -778,9 +786,16 @@ void LcdDisplay::SetupUI() {
 
     for (int index = 0; index < 2; ++index) {
         auto button = lv_obj_create(screen);
-        lv_obj_set_size(button, voice_geometry::kButtonSize, voice_geometry::kButtonSize);
-        lv_obj_set_pos(button, index == 0 ? voice_geometry::kMuteLeft : voice_geometry::kEndLeft,
-                       voice_geometry::kButtonTop);
+        const int size = wide ? voice_geometry::amoled_voice::kButtonSize
+                              : voice_geometry::kButtonSize;
+        const int top = wide ? voice_geometry::amoled_voice::kButtonTop
+                             : voice_geometry::kButtonTop;
+        const int left = wide
+            ? (index == 0 ? voice_geometry::amoled_voice::kButtonSide
+                          : view_w - voice_geometry::amoled_voice::kButtonSide - size)
+            : (index == 0 ? voice_geometry::kMuteLeft : voice_geometry::kEndLeft);
+        lv_obj_set_size(button, size, size);
+        lv_obj_set_pos(button, left, top);
         lv_obj_set_style_radius(button, LV_RADIUS_CIRCLE, 0);
         /* Mic and hang-up. The mic keeps the dark disc the user likes; hang-up
          * is red, because it is the one control that ends something. Both use
@@ -828,8 +843,15 @@ void LcdDisplay::SetupUI() {
         });
     for (int i = 0; i < 2; ++i) {
         auto b = lv_obj_create(screen);
-        lv_obj_set_pos(b, i == 0 ? 52 : 264, 74);
-        lv_obj_set_size(b, 44, 44);
+        // On the AMOLED these sit in the panel's own corners rather than in
+        // the corners of the old square floating in the middle of it.
+        const int nav_size = wide ? voice_geometry::amoled_voice::kNavSize : 44;
+        lv_obj_set_pos(b,
+                       wide ? (i == 0 ? voice_geometry::amoled_voice::kNavSide
+                                      : view_w - voice_geometry::amoled_voice::kNavSide - nav_size)
+                            : (i == 0 ? 52 : 264),
+                       wide ? voice_geometry::amoled_voice::kNavTop : 74);
+        lv_obj_set_size(b, nav_size, nav_size);
         lv_obj_set_style_radius(b, LV_RADIUS_CIRCLE, 0);
         lv_obj_set_style_pad_all(b, 0, 0);
         lv_obj_set_style_border_width(b, 0, 0);
@@ -840,11 +862,19 @@ void LcdDisplay::SetupUI() {
         lv_obj_set_style_image_recolor(icon, lv_color_white(), 0);
         lv_obj_set_style_image_recolor_opa(icon, LV_OPA_COVER, 0);
         lv_obj_center(icon);
+        // They are told apart by pointer: the old check read the button's x
+        // position, which the AMOLED layout no longer shares with the round
+        // watch's. Both keep the same grey disc and white glyph they always
+        // had - theming these two alone would leave the top of the screen a
+        // different colour from the mute and hang-up below it.
+        voice_nav_buttons_[i] = b;
         lv_obj_add_event_cb(b, [](lv_event_t* e) {
             auto self = static_cast<LcdDisplay*>(lv_event_get_user_data(e));
-            const bool home = lv_obj_get_x(static_cast<lv_obj_t*>(lv_event_get_target(e))) == 52;
-            if (home) Application::GetInstance().OnWatchAction(WatchUi::Action::EndCall, 0, "", "");
-            self->watch_ui_->Show(home ? WatchUi::Page::Home : WatchUi::Page::CodexSettings);
+            if (lv_event_get_target(e) == static_cast<void*>(self->voice_nav_buttons_[0])) {
+                self->watch_ui_->GoHome();
+                return;
+            }
+            self->watch_ui_->Show(WatchUi::Page::CodexSettings);
             Application::GetInstance().OnWatchAction(WatchUi::Action::Refresh, 0, "", "");
         }, LV_EVENT_CLICKED, this);
     }
@@ -862,6 +892,7 @@ void LcdDisplay::SetupUI() {
         data->point.x = sample & 0x1ff;
         data->point.y = (sample >> 9) & 0x1ff;
         data->state = (sample >> 18) ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
+        self->TrackSwipe(data->state, data->point.x, data->point.y);
     });
     ESP_LOGI(TAG, "Codex watch UI: home, voice, settings, keyboard; LVGL touch ready");
 }
@@ -1103,8 +1134,9 @@ void LcdDisplay::UpdateVoiceToolCaption(const char* activity) {
         lv_obj_update_layout(voice_tool_text_);
         const int icon_w = kVoiceToolIconSize;
         const int gap = 8;
-        const int text_w = std::min(static_cast<int>(lv_obj_get_width(voice_tool_text_)), 300);
-        const int left = 180 - (icon_w + gap + text_w) / 2;
+        const int text_w = std::min(static_cast<int>(lv_obj_get_width(voice_tool_text_)), width_ - 60);
+        // Centred on the panel, not on the round watch's old 180.
+        const int left = width_ / 2 - (icon_w + gap + text_w) / 2;
         lv_obj_set_width(voice_tool_text_, text_w);
         lv_label_set_long_mode(voice_tool_text_, LV_LABEL_LONG_DOT);
         lv_obj_set_pos(voice_tool_text_, left + icon_w + gap, kVoiceCaptionTop);
@@ -1146,7 +1178,7 @@ void LcdDisplay::UpdateVoiceStateCaption(const char* text, uint32_t color) {
         lv_obj_set_style_text_align(voice_state_caption_, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_set_style_text_color(voice_state_caption_,
             lv_color_hex(color == kVoiceGray ? 0xF4F1FF : color), 0);
-        lv_obj_set_pos(voice_state_caption_, 10, 42);
+        lv_obj_set_pos(voice_state_caption_, (width_ - 340) / 2, 42);
         voice_state_caption_text_ = text;
         voice_state_caption_color_ = color;
         if (voice_tool_active_) lv_obj_add_flag(voice_state_caption_, LV_OBJ_FLAG_HIDDEN);
@@ -1392,10 +1424,11 @@ void LcdDisplay::RenderVoiceOrb(float seconds) {
     if (voice_orb_canvas_ == nullptr || voice_orb_buffer_ == nullptr) return;
 
     /* The character, not a fluid gradient. Ported from bloub (see
-     * main/display/bloub/) and drawn into the same 166px canvas the orb used.
-     * White on black keeps both colours swap-invariant, so nothing here has to
-     * care how the panel orders its 16-bit words. */
-    const int size = voice_geometry::kOrbSize;
+     * main/display/bloub/) and drawn into a canvas the panel sizes: 166px on
+     * the round watch, wider than that on the AMOLED. White on black keeps
+     * both colours swap-invariant, so nothing here has to care how the panel
+     * orders its 16-bit words. */
+    const int size = voice_orb_size_;
     const uint16_t body = lv_color_to_u16(lv_color_hex(voice_character::kColors[voice_colour_]));
     const uint16_t back = lv_color_to_u16(lv_color_hex(0x000000));
 
@@ -1683,6 +1716,25 @@ void LcdDisplay::FeedTouch(bool pressed, int x, int y) {
     touch_sample_.store((static_cast<uint32_t>(pressed) << 18) |
                        (static_cast<uint32_t>(std::clamp(y, 0, height_ - 1)) << 9) |
                        static_cast<uint32_t>(std::clamp(x, 0, width_ - 1)));
+}
+/* Swiping up from the bottom edge goes home, matching the call screen arrow.
+ * Runs on the LVGL task, with the point LVGL already has, so it needs
+ * no plumbing back from the board's touch task. */
+void LcdDisplay::TrackSwipe(lv_indev_state_t state, int x, int y) {
+    if (state == LV_INDEV_STATE_PRESSED) {
+        if (!swipe_pressed_) {
+            swipe_pressed_ = true;
+            swipe_start_x_ = x;
+            swipe_start_y_ = y;
+        }
+        return;
+    }
+    if (!swipe_pressed_) return;
+    swipe_pressed_ = false;
+    if (watch_ui_ == nullptr || watch_ui_->page() == WatchUi::Page::Home) return;
+    if (!voice_geometry::IsHomeSwipe(swipe_start_y_, height_,
+                                     x - swipe_start_x_, y - swipe_start_y_)) return;
+    watch_ui_->GoHome();
 }
 void LcdDisplay::ShowVoicePage() {
     DisplayLockGuard lock(this);
