@@ -4,7 +4,19 @@ import { createServer, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { DesktopConversationBridge, desktopConversationDates, desktopVoiceTurns } from '../codex';
+import { DesktopConversationBridge, desktopConversationDates, desktopVoiceTurns, voiceRequestResponse } from '../codex';
+
+test('Codex answers are preserved and cannot approve a different kind of request', () => {
+  expect(voiceRequestResponse('thread-follower-command-approval-decision', { decision: 'accept' },
+    'item/commandExecution/requestApproval')).toEqual({ decision: 'accept' });
+  const response = { answers: { project: { answers: ['Instagram page'] } } };
+  expect(voiceRequestResponse('thread-follower-submit-user-input', { response },
+    'item/tool/requestUserInput')).toEqual(response);
+  expect(() => voiceRequestResponse('thread-follower-command-approval-decision', { decision: 'accept' },
+    'item/tool/requestUserInput')).toThrow('does not match');
+  expect(() => voiceRequestResponse('thread-follower-command-approval-decision', { decision: 'yes' },
+    'item/commandExecution/requestApproval')).toThrow();
+});
 
 test('saved speech becomes visible chat messages without starting an agent turn', () => {
   const entries = [
@@ -105,11 +117,23 @@ test('only explicitly saved chats send a targeted desktop refresh', async () => 
     bridge.start();
     await waitFor(() => messages.filter((message) => message.method === 'query-cache-invalidate').length === 3);
     messages.length = 0;
-    bridge.registerThread('saved-chat', async () => ({}));
+    const replies: unknown[] = [];
+    bridge.registerThread('saved-chat', async () => ({}), (method, params) => {
+      replies.push(voiceRequestResponse(method, params, 'item/commandExecution/requestApproval'));
+    });
     bridge.registerThread('temporary-chat', async () => ({}));
     bridge.invalidate('unknown-chat');
     await waitFor(() => messages.filter((message) => message.method === 'query-cache-invalidate').length === 9);
     expect(messages.some((message) => message.method === 'thread-unarchived')).toBe(false);
+    const reply = Buffer.from(JSON.stringify({ type: 'request', requestId: 'approval-answer',
+      method: 'thread-follower-command-approval-decision',
+      params: { conversationId: 'saved-chat', requestId: 'approval-1', decision: 'accept' } }));
+    const frame = Buffer.alloc(reply.length + 4);
+    frame.writeUInt32LE(reply.length); reply.copy(frame, 4); peer!.write(frame);
+    await waitFor(() => messages.some(message => message.requestId === 'approval-answer'));
+    expect(replies).toEqual([{ decision: 'accept' }]);
+    expect(messages.find(message => message.requestId === 'approval-answer')?.resultType).toBe('success');
+
 
     bridge.invalidate('saved-chat');
     await waitFor(() => messages.some((message) => message.method === 'thread-unarchived'));

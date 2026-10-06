@@ -1,5 +1,12 @@
 /** Safe, short explanations for the device and local troubleshooting report. */
 export function classifyVoiceFailure(message: string): { code: string; message: string } {
+  if (/does not support reasoning/.test(message)) {
+    const choice = /Model ([^ ]+) does not support reasoning ([^.]+)/.exec(message);
+    return { code: 'reasoning_unsupported', message: choice ? `${choice[1]} cannot use reasoning ${choice[2]}. Change the level or model.` : 'This model cannot use that reasoning level. Change the level or model.' };
+  }
+  if (/Cannot verify reasoning/.test(message)) {
+    return { code: 'reasoning_unverified', message: 'Cannot check the reasoning level. Check your Codex model and retry.' };
+  }
   if (/\b429\b|too many requests|rate.?limit|usage limit/i.test(message)) {
     return { code: 'usage_limit', message: 'ChatGPT usage limit reached. Voice returns when it resets.' };
   }

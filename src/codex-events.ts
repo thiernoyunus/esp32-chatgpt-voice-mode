@@ -53,6 +53,7 @@ export const codexBridgeRealtimeRequestSchema = z.discriminatedUnion('type', [
     requestId: z.string().min(1),
     sdp: realtimeSdpSchema,
     model: z.string().min(1).max(128).optional(),
+    reasoningEffort: z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']).optional(),
     // Resume this saved chat instead of opening a new one. Absent = new chat.
     threadId: z.string().min(1).max(64).optional(),
     // Opt-in throwaway chat; absent/false keeps the chat in the Codex sidebar.

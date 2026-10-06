@@ -279,6 +279,11 @@ cd ..
 ./scripts/install-service.sh
 ```
 
+Keep Codex desktop open. The installer registers a small companion that Codex
+starts inside the app, giving voice chats the app's project and task tools.
+After installing it, start or resume a chat in Codex to activate the companion.
+The background listener reconnects when the companion becomes available.
+
 Optional machine-specific settings, passed through at install time and never
 committed:
 
@@ -292,6 +297,19 @@ Use a model your Codex actually offers. A retired name is remapped where a
 replacement is known — asking for `gpt-5.6-luna` resolves to `gpt-6-luna` — and
 a name with no replacement fails the call with `Unknown voice model:` in the log,
 listing what is available.
+
+Reasoning follows the watch's saved choice, then
+`VOICEMODE_CODEX_REASONING_EFFORT` if set, then Codex's `model_reasoning_effort`.
+Low is used only when none supplies a preference. Choose **Default** on the watch
+to return to your Codex setting. Changing the model does not change the reasoning
+level. An unsupported combination stops the call with an explanation; choose a
+supported level or another model. The watch must run firmware that sends
+`reasoningEffort`; older firmware still uses the Mac/Codex preference.
+
+Access follows Codex's configured permissions, including Full Access when selected
+there. Required approvals and questions are shown in the saved voice chat on your
+phone or desktop. [The parity audit](documentation/esp-codex-parity.md) records
+what has been verified and what still differs.
 
 `VOICEMODE_CODEX_DISABLE_MCP` matters if you have MCP servers that are slow to
 start: every one of them delays the first call after a restart.
