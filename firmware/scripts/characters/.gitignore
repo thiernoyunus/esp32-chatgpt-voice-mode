@@ -2,5 +2,5 @@
 # raw recordings. Only the finished pack (main/assets/characters/) is committed.
 runtime
 runtime-src/
-frames/
-watch/
+frames
+watch

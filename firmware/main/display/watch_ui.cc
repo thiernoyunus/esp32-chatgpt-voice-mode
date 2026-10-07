@@ -1,4 +1,5 @@
 #include "watch_ui.h"
+#include "mascot_frames.h"
 #include "watch_icons.h"
 #include "watch_dotmatrix.h"   /* the app-pixels look; the ChatGPT pages are moving to it */
 #include "bloub/bloub_shapes.h"
@@ -501,8 +502,11 @@ void WatchUi::Show(Page page) {
     }
     case Page::CodexSettings:
         Header("ChatGPT",Page::Voice);Column();
-        Row("Shape",kShapeNames[std::clamp(info_.shape,0,voice_character::kShapeCount-1)],[this]{Show(Page::Shapes);});
-        Row("Colour",kColourNames[std::clamp(info_.colour,0,voice_character::kColorCount-1)],[this]{Show(Page::Colours);});
+        if(info_.mascot>=0) Row("Mascot",mascot::kMascots[info_.mascot].name,[this]{Show(Page::Mascots);});
+        else{
+            Row("Shape",kShapeNames[std::clamp(info_.shape,0,voice_character::kShapeCount-1)],[this]{Show(Page::Shapes);});
+            Row("Colour",kColourNames[std::clamp(info_.colour,0,voice_character::kColorCount-1)],[this]{Show(Page::Colours);});
+        }
         Row("Voice",info_.voice.empty()?"Default":info_.voice.c_str(),[this]{Show(Page::Voices);});
         Row("Model",info_.model.c_str(),[this]{model_return_=Page::CodexSettings;Show(Page::Models);Emit(Action::Models);});
         Row("Chat",info_.temporary_chat?"Temporary":info_.chat.c_str(),[this]{Show(Page::Chats);Emit(Action::Models);});
@@ -512,6 +516,14 @@ void WatchUi::Show(Page page) {
             Emit(Action::Captions,info_.captions?1:0);
             Show(Page::CodexSettings);
         });break;
+    case Page::Mascots:
+        Header("Mascot",Page::CodexSettings);Column();
+        for(int i=0;i<mascot::kMascotCount;++i){
+            Row(mascot::kMascots[i].name,nullptr,[this,i]{
+                info_.mascot=i; Emit(Action::SelectMascot,i); Show(Page::Mascots);
+            },info_.mascot==i);
+        }
+        break;
     case Page::Shapes: {
         Header("Shape",Page::CodexSettings);Column();
         // Four rows fill the space between the header rule and the bottom of
@@ -775,6 +787,8 @@ void WatchUi::SetInfo(const Info& info) {
     // their own trigger - folded in with the chats it would only ever have
     // redrawn a page the row is not on.
     const bool captions_changed=info_.captions!=info.captions;
+    // A spoken "switch to Iggy" changes the mascot while its row may be up.
+    const bool mascot_changed=info_.mascot!=info.mascot;
     bool sleep_changed=info_.sleep_seconds!=info.sleep_seconds;
     bool notice_changed=info_.notice!=info.notice;
     info_=info;
@@ -784,7 +798,8 @@ void WatchUi::SetInfo(const Info& info) {
        ||(page_==Page::Chats&&chats_changed)
        ||(page_==Page::Sleep&&sleep_changed)
        ||(page_==Page::Brightness&&sleep_changed)
-       ||(page_==Page::CodexSettings&&captions_changed)) Show(page_);
+       ||(page_==Page::CodexSettings&&(captions_changed||mascot_changed))
+       ||(page_==Page::Mascots&&mascot_changed)) Show(page_);
     else if (notice_changed) UpdateNotice();
 }
 void WatchUi::Tick(const char* clock,const char* date){

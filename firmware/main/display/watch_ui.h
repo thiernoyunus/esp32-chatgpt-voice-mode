@@ -12,10 +12,10 @@ public:
     static constexpr int kThemeCount = watch_palette::kThemeCount;
     enum class Page { Home, Voice, Settings, Brightness, Volume, Wifi, Clock, About,
                       CodexSettings, Models, Keyboard, WifiSetup, Sleep, Reasoning,
-                      Chats, Voices, Shapes, Colours, Themes };
+                      Chats, Voices, Shapes, Colours, Themes, Mascots };
     enum class Action { Refresh, OpenVoice, Mute, EndCall, Brightness, Volume,
                         ScanWifi, JoinWifi, SetupWifi, Models, SelectModel, Sleep, SelectReasoning,
-                        SelectChat, TemporaryChat, SelectVoice, SelectShape, SelectColour, Captions,
+                        SelectChat, TemporaryChat, SelectVoice, SelectShape, SelectColour, SelectMascot, Captions,
                         SelectTheme };
     struct Info {
         int brightness = 75, volume = 65, battery = -1;
@@ -37,6 +37,9 @@ public:
         // Spoken voice for the next call. Empty means the ChatGPT default.
         std::string voice;
         int shape = 0, colour = 0, ui_theme = 0;
+        // Which mascot is worn (mascot::kMascots), or -1 when no mascot pictures
+        // are on the watch: then the blob's Shape and Colour are offered instead.
+        int mascot = -1;
         std::vector<std::string> networks, saved_networks, models, chats, chat_folders;
     };
     using Callback = std::function<void(Action, int, const std::string&, const std::string&)>;

@@ -175,7 +175,7 @@ protected:
 static DRAM_ATTR TaskHandle_t s_touch_task_for_isr = nullptr;
 
 // The button component installs the GPIO interrupt service as IRAM-safe,
-// so this runs even while flash is busy (saving settings, reading Felipe's
+// so this runs even while flash is busy (saving settings, reading the mascot's
 // pictures). Then flash *and PSRAM* are out of reach, so it touches only
 // IRAM code and internal-RAM data: not `tp` or this board object, which
 // live in PSRAM. Either crashed with "Cache disabled but cached memory

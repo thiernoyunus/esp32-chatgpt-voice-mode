@@ -24,6 +24,8 @@ struct Application {
     int refreshes = 0;
     bool SetUiTheme(int);
     void RefreshWatchInfo() { ++refreshes; }
+    // The real one queues onto the main task; running it now keeps the count exact.
+    template <typename F> void Schedule(F&& task) { task(); }
 };
 METHOD
 int main() {

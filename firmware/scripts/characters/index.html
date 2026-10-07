@@ -5,23 +5,27 @@
 <style>
 body{margin:24px;font:16px system-ui;background:#eee;color:#222}main{max-width:600px;margin:auto}.watch{width:410px;max-width:100%;height:502px;background:#000;border-radius:48px;display:grid;place-content:center;text-align:center;color:#fff}button{font:inherit;padding:10px;margin:4px}#result{white-space:pre-wrap;font:13px monospace}button[aria-pressed=true]{background:#222;color:#fff}#state{margin:12px}
 </style>
-<main><h1>One character: Felipe</h1><p>Original Dots movement. Desktop test, not watch firmware.</p>
-<div class="watch"><canvas id="character" aria-label="Felipe character"></canvas><div id="state" aria-live="polite">Starting…</div></div>
+<main><h1>One character</h1><p>Original Dots movement. Desktop test, not watch firmware.</p>
+<div class="watch"><canvas id="character" aria-label="Codex character"></canvas><div id="state" aria-live="polite">Starting…</div></div>
 <div id="controls"><button data-kind="0" aria-pressed="true">Idle</button><button data-kind="5" aria-pressed="false">Thinking</button><button data-kind="1" aria-pressed="false">Working</button><button data-kind="2" aria-pressed="false">Searching</button><button data-kind="3" aria-pressed="false">Creating</button><button data-kind="4" aria-pressed="false">Payment</button><button data-kind="6" aria-pressed="false">Your turn</button><button data-kind="7" aria-pressed="false">Ready</button><button data-kind="8" aria-pressed="false">Paused</button><button data-kind="9" aria-pressed="false">Error</button></div><details><summary>Rendering check</summary><pre id="result">Loading the original character engine…</pre></details></main>
 <script type="module">
 import create from '/runtime/single-thread/orbit-characters.mjs';
 // ?size=330 draws bigger (used when exporting watch pictures); default 236.
-const S=Number(new URLSearchParams(location.search).get('size'))||236;
+const params=new URLSearchParams(location.search);
+const S=Number(params.get('size'))||236;
+const NAME=params.get('character')||'Felipe';  // ?character=Alfred
 const canvasEl=document.querySelector('#character'); canvasEl.width=canvasEl.height=S; canvasEl.style.width=canvasEl.style.height=S+'px';
 const result=document.querySelector('#result'), label=document.querySelector('#state');
 let sequence=0n, episode=0n, kind=0, first=false, submitted=0;
 try {
   const engine=await create({locateFile:p=>'/runtime/single-thread/'+p});
-  const preset=engine.presets().find(p=>p.title==='Felipe');
-  if(!preset) throw Error('Felipe is missing from this installed character collection.');
+  const preset=engine.presets().find(p=>p.title===NAME);
+  if(!preset) throw Error(NAME+' is missing from this installed character collection.');
   const character=new engine.Character('#character',S,S,{activities:true});
   const restored=character.restore(engine.presetAppearance(preset.id));
   if(restored) throw Error(restored);
+  // ?eyes=dots swaps the eye style (engine Category.Eyes = 2), e.g. to open Alfred's eyes.
+  if(params.get('eyes') && !character.select(2, params.get('eyes'))) throw Error('No eye style '+params.get('eyes'));
   character.setActive(true);
   const bound=character.applyActivity({command:3,sequence,episodeId:0n,episodeHighWater:episode,activity:0,outcome:0,entry:1});
   if(bound!==0) throw Error('Activity startup failed: '+bound);

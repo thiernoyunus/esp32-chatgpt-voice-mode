@@ -9,13 +9,14 @@ class Handler(SimpleHTTPRequestHandler):
         super().__init__(*args, directory=str(HERE), **kwargs)
 
     def do_PUT(self):
-        # Saves captured flipbook frames: PUT /frames/<name>.png
-        name = Path(self.path).name
-        if not self.path.startswith('/frames/') or not name.endswith('.png'):
+        # Saves captured flipbook frames: PUT /frames/<character>/<name>.png
+        parts = self.path.split('/')
+        if len(parts) != 4 or parts[1] != 'frames' or not parts[2].isalnum() or not parts[3].endswith('.png') \
+                or '..' in parts[3]:
             self.send_error(400)
             return
-        out = HERE / 'frames' / name
-        out.parent.mkdir(exist_ok=True)
+        out = HERE / 'frames' / parts[2] / parts[3]
+        out.parent.mkdir(parents=True, exist_ok=True)
         out.write_bytes(self.rfile.read(int(self.headers['Content-Length'])))
         self.send_response(204)
         self.end_headers()

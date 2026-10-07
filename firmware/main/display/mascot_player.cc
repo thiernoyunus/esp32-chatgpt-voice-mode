@@ -1,4 +1,4 @@
-#include "felipe_player.h"
+#include "mascot_player.h"
 
 #include <esp_heap_caps.h>
 #include <esp_log.h>
@@ -8,56 +8,65 @@
 #include <algorithm>
 #include <cstring>
 
-#define TAG "Felipe"
+#define TAG "Mascot"
 
 namespace {
 
-using felipe::Move;
+using mascot::Move;
 
-constexpr size_t kPictureBytes = static_cast<size_t>(felipe::kLargestArea) * 2;
+constexpr size_t kPictureBytes = static_cast<size_t>(mascot::kLargestArea) * 2;
 constexpr uint32_t kReportEveryMs = 10000;
 
 struct Family { Move intro; Move loop; };
 
 // The movement for each mood: an optional once-through start, then the loop.
-Family FamilyFor(FelipePlayer::Mood mood) {
+Family FamilyFor(MascotPlayer::Mood mood) {
     switch (mood) {
-        case FelipePlayer::Mood::Connecting: return {Move::CreatingIntro, Move::Creating};
-        case FelipePlayer::Mood::Thinking: return {Move::ThinkingIntro, Move::Thinking};
-        case FelipePlayer::Mood::Working: return {Move::WorkingIntro, Move::Working};
-        case FelipePlayer::Mood::Error: return {Move::ErrorIntro, Move::Error};
-        case FelipePlayer::Mood::Idle: return {Move::Idle, Move::Idle};
-        case FelipePlayer::Mood::Asleep: break;
+        case MascotPlayer::Mood::Connecting: return {Move::CreatingIntro, Move::Creating};
+        case MascotPlayer::Mood::Thinking: return {Move::ThinkingIntro, Move::Thinking};
+        case MascotPlayer::Mood::Working: return {Move::WorkingIntro, Move::Working};
+        case MascotPlayer::Mood::Error: return {Move::ErrorIntro, Move::Error};
+        case MascotPlayer::Mood::Idle: return {Move::Idle, Move::Idle};
+        case MascotPlayer::Mood::Asleep: break;
     }
     return {Move::PausedIntro, Move::Paused};
 }
 
-const felipe::Movement& Info(Move move) { return felipe::kMovements[static_cast<int>(move)]; }
-
 }  // namespace
 
-FelipePlayer::~FelipePlayer() {
+const mascot::Movement& MascotPlayer::Info(Move move) const {
+    return mascot::kMascots[mascot_].movements[static_cast<int>(move)];
+}
+
+void MascotPlayer::SetMascot(int index) {
+    mascot_ = std::clamp(index, 0, mascot::kMascotCount - 1);
+    for (int i = 0; i < static_cast<int>(Move::Count); ++i) {
+        const auto& movement = Info(static_cast<Move>(i));
+        loop_ms_[i] = 0;
+        for (int s = 0; s < movement.step_count; ++s) loop_ms_[i] += movement.steps[s].ms;
+    }
+    started_ = false;
+    shown_move_ = Move::Count;  // the next picture clears the whole field
+}
+
+MascotPlayer::~MascotPlayer() {
     jpeg_free_align(scratch_);
     heap_caps_free(squeezed_);
 }
 
-bool FelipePlayer::Load() {
+bool MascotPlayer::Load() {
     if (loaded()) return true;
     if (tried_) return false;  // one try per boot; a missing pack means the blob
     tried_ = true;
     pack_ = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, "characters");
-    char magic[sizeof(felipe::kPackMagic) - 1] = {};
+    char magic[sizeof(mascot::kPackMagic) - 1] = {};
     if (pack_ == nullptr || esp_partition_read(pack_, 0, magic, sizeof(magic)) != ESP_OK ||
-        memcmp(magic, felipe::kPackMagic, sizeof(magic)) != 0) {
-        ESP_LOGW(TAG, "No Felipe pack in the characters partition; keeping the blob");
+        memcmp(magic, mascot::kPackMagic, sizeof(magic)) != 0) {
+        ESP_LOGW(TAG, "No mascot pack in the characters partition; keeping the blob");
         return false;
     }
-    for (int i = 0; i < static_cast<int>(Move::Count); ++i) {
-        const auto& movement = felipe::kMovements[i];
-        loop_ms_[i] = 0;
-        for (int s = 0; s < movement.step_count; ++s) loop_ms_[i] += movement.steps[s].ms;
-    }
-    squeezed_ = static_cast<uint8_t*>(heap_caps_malloc(felipe::kBiggestPicture, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    SetMascot(mascot_);
+    squeezed_ = static_cast<uint8_t*>(heap_caps_malloc(mascot::kBiggestPicture, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     // The JPEG decoder needs a 16-byte aligned output; at this size it lands in PSRAM.
     scratch_ = static_cast<uint16_t*>(jpeg_calloc_align(kPictureBytes, 16));
     if (scratch_ == nullptr || squeezed_ == nullptr) {
@@ -69,16 +78,16 @@ bool FelipePlayer::Load() {
         return false;
     }
     ESP_LOGI(TAG, "Loaded; picture slots %u + %u bytes in PSRAM. Free: internal %u, PSRAM %u",
-             (unsigned)kPictureBytes, (unsigned)felipe::kBiggestPicture,
+             (unsigned)kPictureBytes, (unsigned)mascot::kBiggestPicture,
              (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
              (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
     return true;
 }
 
-bool FelipePlayer::Unpack(Move move, int picture) {
+bool MascotPlayer::Unpack(Move move, int picture) {
     const auto& pic = Info(move).pictures[picture];
     const int64_t began = esp_timer_get_time();
-    if (pic.length > felipe::kBiggestPicture ||
+    if (pic.length > mascot::kBiggestPicture ||
         esp_partition_read(pack_, Info(move).offset + pic.start, squeezed_, pic.length) != ESP_OK) {
         ESP_LOGE(TAG, "Could not read picture %d of movement %d", picture, static_cast<int>(move));
         return false;
@@ -110,8 +119,9 @@ bool FelipePlayer::Unpack(Move move, int picture) {
     return true;
 }
 
-bool FelipePlayer::Draw(lv_color16_t* canvas, int size, Mood mood) {
-    if (!loaded() || size < felipe::kWidth || size < felipe::kHeight) return false;
+bool MascotPlayer::Draw(lv_color16_t* canvas, int size, Mood mood) {
+    const auto& who = mascot::kMascots[mascot_];
+    if (!loaded() || size < who.w || size < who.h) return false;
     const Family family = FamilyFor(mood);
     if (!started_ || mood != mood_) {
         // Thinking again within the same answer does not restart the bulb.
@@ -160,8 +170,8 @@ bool FelipePlayer::Draw(lv_color16_t* canvas, int size, Mood mood) {
     auto* out = reinterpret_cast<uint16_t*>(canvas);
     if (first || moved) memset(out, 0, static_cast<size_t>(size) * size * 2);
     const auto& m = Info(move_);
-    const int x0 = (size - felipe::kWidth) / 2 + m.x;
-    const int y0 = (size - felipe::kHeight) / 2 + m.y;
+    const int x0 = (size - who.w) / 2 + m.x;
+    const int y0 = (size - who.h) / 2 + m.y;
     for (int y = 0; y < m.h; ++y) {
         memcpy(out + (y0 + y) * size + x0, scratch_ + y * m.w, static_cast<size_t>(m.w) * 2);
     }

@@ -14,7 +14,7 @@ set(SOURCES "audio/audio_codec.cc"
             "display/bloub/bloub_decor.c"
             "display/bloub/bloub_states.c"
             "display/watch_icons.cc"
-            "display/felipe_player.cc"
+            "display/mascot_player.cc"
             "display/lvgl_display/lvgl_display.cc"
             "display/lvgl_display/emoji_collection.cc"
             "display/lvgl_display/lvgl_theme.cc"
@@ -412,12 +412,12 @@ function(get_assets_local_file assets_source assets_local_file_var)
 endfunction()
 
 
-# Felipe's pictures in the upper 16 MB (scripts/characters/README.md).
+# The mascots' pictures in the upper 16 MB (scripts/characters/README.md).
 # Without the pack the watch shows the blob.
-set(FELIPE_PACK "${CMAKE_CURRENT_SOURCE_DIR}/assets/characters/felipe.pack")
+set(MASCOT_PACK "${CMAKE_CURRENT_SOURCE_DIR}/assets/characters/mascots.pack")
 partition_table_get_partition_info(characters_size "--partition-name characters" "size")
-if("${characters_size}" AND EXISTS "${FELIPE_PACK}")
-    esptool_py_flash_to_partition(flash "characters" "${FELIPE_PACK}")
+if("${characters_size}" AND EXISTS "${MASCOT_PACK}")
+    esptool_py_flash_to_partition(flash "characters" "${MASCOT_PACK}")
 endif()
 
 partition_table_get_partition_info(size "--partition-name assets" "size")

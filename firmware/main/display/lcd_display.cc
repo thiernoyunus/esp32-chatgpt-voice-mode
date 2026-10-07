@@ -46,6 +46,8 @@ namespace {
 // 30-degree steps and reads as stuttering rather than spinning.
 constexpr uint32_t kFluidOrbFramePeriodMs = 33;
 constexpr uint32_t kVoiceErrorColor = 0xCF4B59;
+// How long the mascot stays upset after the agent says it could not do something.
+constexpr uint32_t kMascotErrorMs = 3000;
 
 constexpr uint32_t kVoiceGreen = 0x30C46E;
 constexpr uint32_t kVoiceCyan = 0x2FD8E8;
@@ -486,6 +488,7 @@ void LcdDisplay::SetupUI() {
                                           voice_character::kShapeCount - 1);
         voice_colour_ = std::clamp<int32_t>(character.GetInt("voice_colour", 0), 0,
                                            voice_character::kColorCount - 1);
+        mascot_.SetMascot(character.GetInt("mascot", 0));
     }
     {
         // The captions toggle has to be read back here too, or turning them
@@ -1232,8 +1235,8 @@ void LcdDisplay::SetVoiceActivity(const char* activity, const char* icon, const 
         ClearVoiceToolCaption();
         voice_tool_active_ = false;
         voice_working_ = false;
-        felipe_busy_ = false;
-        felipe_tool_ = false;
+        mascot_busy_ = false;
+        mascot_tool_ = false;
         ShowVoiceToolCaption(false);
         SetStatus(Lang::Strings::LISTENING);
         return;
@@ -1252,7 +1255,7 @@ void LcdDisplay::SetVoiceActivity(const char* activity, const char* icon, const 
                 self->ReleaseVoiceToolHold();
                 self->voice_tool_active_ = false;
                 self->ShowVoiceToolCaption(false);
-                self->felipe_tool_ = false;
+                self->mascot_tool_ = false;
             }, kVoiceToolHoldMs - shown, this);
             if (voice_tool_hold_timer_ != nullptr) {
                 lv_timer_set_repeat_count(voice_tool_hold_timer_, 1);
@@ -1271,8 +1274,8 @@ void LcdDisplay::SetVoiceActivity(const char* activity, const char* icon, const 
     // "Answering…" alone is a plain reply, not work; during work it keeps
     // whichever prop was already up.
     if (strcmp(activity, "Answering…") != 0) {
-        felipe_busy_ = true;
-        felipe_tool_ = named_tool;
+        mascot_busy_ = true;
+        mascot_tool_ = named_tool;
     }
     /* Working covers thinking too - the character should be doing something
      * from the first status right through to the answer, and "Thinking" is
@@ -1330,7 +1333,21 @@ void LcdDisplay::SetVoiceMicrophoneMuted(bool muted) {
     }
 }
 
+void LcdDisplay::SetMascot(int index) {
+    DisplayLockGuard lock(this);
+    mascot_.SetMascot(index);
+}
+
+bool LcdDisplay::FlashMascotError() {
+    DisplayLockGuard lock(this);
+    if (!mascot_.loaded()) return false;
+    mascot_error_at_ = lv_tick_get() | 1;  // never 0, which means "not flashing"
+    return true;
+}
+
 bool LcdDisplay::SetVoiceCharacter(int shape, int colour) {
+    // A mascot has no shape or colour; say so rather than pretend it changed.
+    if (mascot_.loaded()) return false;
     DisplayLockGuard lock(this);
     voice_shape_ = std::clamp(shape, 0, voice_character::kShapeCount - 1);
     voice_colour_ = std::clamp(colour, 0, voice_character::kColorCount - 1);
@@ -1358,8 +1375,8 @@ void LcdDisplay::SetStatus(const char* status) {
     // clearing it here the pill keeps showing the last tool caption for the
     // rest of the call, because nothing else ever releases the latch.
     if (strcmp(status, Lang::Strings::STANDBY) == 0 || strcmp(status, Lang::Strings::ERROR) == 0) {
-        felipe_busy_ = false;
-        felipe_tool_ = false;
+        mascot_busy_ = false;
+        mascot_tool_ = false;
     }
     if (strcmp(status, Lang::Strings::STANDBY) == 0 ||
         strcmp(status, Lang::Strings::ERROR) == 0 ||
@@ -1458,23 +1475,25 @@ bool LcdDisplay::AdvanceWorkingCycle() {
 void LcdDisplay::RenderVoiceOrb(float seconds) {
     if (voice_orb_canvas_ == nullptr || voice_orb_buffer_ == nullptr) return;
 
-    /* Felipe, when his pictures are on the watch: asleep outside a call,
+    /* The mascot, when its pictures are on the watch: asleep outside a call,
      * painting while it connects, the lightbulb while the agent thinks, the
      * keyboard while it uses a tool (searches included), resting otherwise.
      * Talking does not interrupt him: Codex keeps working while it speaks. */
-    if (felipe_.Load()) {
+    if (mascot_.Load()) {
         const auto state = Application::GetInstance().GetDeviceState();
         /* Asleep only outside a call. In a call he is never put to sleep by
          * mute: he keeps thinking or working, and otherwise rests. */
         const bool in_call = state == kDeviceStateConnecting || state == kDeviceStateListening ||
                              state == kDeviceStateSpeaking;
-        auto mood = FelipePlayer::Mood::Asleep;
-        if (voice_orb_connecting_) mood = FelipePlayer::Mood::Connecting;
-        else if (voice_orb_color_ == kVoiceErrorColor) mood = FelipePlayer::Mood::Error;
-        else if (in_call && felipe_busy_)
-            mood = felipe_tool_ ? FelipePlayer::Mood::Working : FelipePlayer::Mood::Thinking;
-        else if (in_call) mood = FelipePlayer::Mood::Idle;
-        if (felipe_.Draw(voice_orb_buffer_, voice_orb_size_, mood)) lv_obj_invalidate(voice_orb_canvas_);
+        auto mood = MascotPlayer::Mood::Asleep;
+        if (voice_orb_connecting_) mood = MascotPlayer::Mood::Connecting;
+        else if (voice_orb_color_ == kVoiceErrorColor) mood = MascotPlayer::Mood::Error;
+        else if (mascot_error_at_ != 0 && lv_tick_elaps(mascot_error_at_) < kMascotErrorMs)
+            mood = MascotPlayer::Mood::Error;
+        else if (in_call && mascot_busy_)
+            mood = mascot_tool_ ? MascotPlayer::Mood::Working : MascotPlayer::Mood::Thinking;
+        else if (in_call) mood = MascotPlayer::Mood::Idle;
+        if (mascot_.Draw(voice_orb_buffer_, voice_orb_size_, mood)) lv_obj_invalidate(voice_orb_canvas_);
         return;
     }
 

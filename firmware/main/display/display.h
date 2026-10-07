@@ -55,6 +55,8 @@ public:
     // The silhouette and colour worn on the call screen. Both are clamped to
     // the palette. False when this display cannot draw the character at all.
     virtual bool SetVoiceCharacter(int shape, int colour) { (void)shape; (void)colour; return false; }
+    // The agent could not do what was asked: the mascot looks upset briefly. False without one.
+    virtual bool FlashMascotError() { return false; }
     virtual void ShowVoiceModels(const std::vector<std::string>& names, size_t page) { (void)names; (void)page; }
     virtual void HideVoiceModels() {}
     virtual void FeedTouch(bool pressed, int x, int y) { (void)pressed; (void)x; (void)y; }

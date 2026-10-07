@@ -1,7 +1,7 @@
 #ifndef LCD_DISPLAY_H
 #define LCD_DISPLAY_H
 
-#include "felipe_player.h"
+#include "mascot_player.h"
 #include "gif/lvgl_gif.h"
 #include "lvgl_display.h"
 
@@ -52,7 +52,7 @@ protected:
     lv_obj_t* voice_state_caption_ = nullptr;
     lv_timer_t* voice_orb_timer_ = nullptr;
     lv_color16_t* voice_orb_buffer_ = nullptr;
-    FelipePlayer felipe_;  // draws instead of the blob when his pictures are on the watch
+    MascotPlayer mascot_;  // draws instead of the blob when the mascot pictures are on the watch
     lv_obj_t* voice_model_label_ = nullptr;
     lv_obj_t* voice_model_panel_ = nullptr;
     // The tool caption that stands in for the state word, and its icon.
@@ -68,13 +68,15 @@ protected:
     bool voice_orb_connecting_ = false;
     // True from the agent's first status report until it answers.
     bool voice_working_ = false;
-    // True while a named tool (an app, or a search) is running: Felipe types
-    // on his keyboard instead of thinking with the lightbulb.
-    bool felipe_tool_ = false;
-    // Felipe's own "agent is busy": unlike voice_working_ it survives the
+    // True while a named tool (an app, or a search) is running: the mascot
+    // types on a keyboard instead of thinking with the lightbulb.
+    bool mascot_tool_ = false;
+    // The mascot's own "agent is busy": unlike voice_working_ it survives the
     // voice talking (Codex keeps working while it speaks) and clears only when
     // the turn completes ("Listening") or the call ends.
-    bool felipe_busy_ = false;
+    bool mascot_busy_ = false;
+    // When FlashMascotError() last fired; 0 when it has not.
+    uint32_t mascot_error_at_ = 0;
     // Where the working cycle is. Held as plain integers so this header does
     // not have to pull in bloub_states.h, whose profile tables are inline.
     // The values are bloub_state_id_t; the cycle order is in lcd_display.cc.
@@ -123,6 +125,13 @@ public:
                           const char* pixels = nullptr) override;
     void SetVoiceModel(const char* name) override;
     bool SetVoiceCharacter(int shape, int colour) override;
+    // Mascot pictures are on the watch and the mascot is drawn instead of the blob.
+    bool HasMascot() const { return mascot_.loaded(); }
+    // Show mascot::kMascots[index] on the call screen.
+    void SetMascot(int index);
+    // The agent told the wearer it could not do something: the mascot looks
+    // upset for a few seconds, then carries on. False without a mascot.
+    bool FlashMascotError() override;
     void ShowVoiceModels(const std::vector<std::string>& names, size_t page) override;
     void HideVoiceModels() override;
     void FeedTouch(bool pressed, int x, int y) override;
