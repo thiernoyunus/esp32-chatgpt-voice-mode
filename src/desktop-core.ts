@@ -11,6 +11,7 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
+import { resolveCodexExecutable } from './codex-executable';
 
 export const DESKTOP_CORE_HOST_NAME = 'esp_codex_host';
 export function desktopCoreDirectory() {
@@ -30,6 +31,7 @@ export class DesktopCodexProcess extends EventEmitter {
   readonly stderr = new PassThrough();
   killed = false;
   #socket: Socket | null = null;
+  #child: ReturnType<typeof spawn> | null = null;
 
   constructor(cwd: string, overrides: string[], directory = desktopCoreDirectory()) {
     super();
@@ -42,8 +44,19 @@ export class DesktopCodexProcess extends EventEmitter {
       const path = candidates.pop();
       if (this.killed) return;
       if (!path) {
-        this.stderr.write('Codex desktop host is unavailable. Open Codex on this Mac and start or resume a chat.\n');
-        this.emit('exit', 1);
+        // The host only runs while a Codex desktop chat is loaded. Without it,
+        // start Codex ourselves as before the host existed (so without the
+        // host's own desktop-only MCP server); only the app tools are missing.
+        this.stderr.write('Codex desktop host is not running; starting Codex directly (no desktop app tools).\n');
+        const child = spawn(resolveCodexExecutable().path, ['app-server', '--listen', 'stdio://', ...overrides,
+          '-c', `mcp_servers.${DESKTOP_CORE_HOST_NAME}.enabled=false`],
+          { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
+        child.on('error', (error) => { this.stderr.write(`${error.message}\n`); this.emit('exit', 1); });
+        child.on('exit', (code) => { this.stdout.end(); this.emit('exit', this.killed ? 0 : code ?? 1); });
+        child.stderr.pipe(this.stderr, { end: false });
+        child.stdout.pipe(this.stdout);
+        this.stdin.pipe(child.stdin);
+        this.#child = child;
         return;
       }
       const socket = createConnection(path);
@@ -62,7 +75,7 @@ export class DesktopCodexProcess extends EventEmitter {
     queueMicrotask(connect);
   }
 
-  kill(): void { this.killed = true; this.#socket?.destroy(); this.stdin.destroy(); }
+  kill(): void { this.killed = true; this.#socket?.destroy(); this.#child?.kill(); this.stdin.destroy(); }
 }
 
 /** Loaded by Codex desktop as an MCP server, so its children inherit app access. */

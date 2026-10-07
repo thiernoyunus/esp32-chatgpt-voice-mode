@@ -279,10 +279,15 @@ cd ..
 ./scripts/install-service.sh
 ```
 
-Keep Codex desktop open. The installer registers a small companion that Codex
-starts inside the app, giving voice chats the app's project and task tools.
-After installing it, start or resume a chat in Codex to activate the companion.
-The background listener reconnects when the companion becomes available.
+Calls work without Codex desktop open. The installer also registers a small
+companion that Codex starts inside the app; while a Codex chat is loaded, calls
+go through it and get the app's project and task tools. Without it the listener
+starts Codex itself, as before, and only those desktop-only tools are missing.
+
+Every MCP server in your Codex config starts before a call's voice does, so a
+slow or logged-out one delays every call (the watch gives up at 30 seconds).
+Remove ones you do not use, or list them in `VOICEMODE_CODEX_DISABLE_MCP`
+below to keep them out of calls only.
 
 Optional machine-specific settings, passed through at install time and never
 committed:

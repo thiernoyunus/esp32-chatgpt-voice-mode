@@ -38,7 +38,7 @@ test('desktop owns the core, preserves its messages, and rejects invalid startup
     chmodSync(host.path, 0o666);
     const missing = new DesktopCodexProcess(directory, [], directory);
     const error = new Promise<string>((resolve) => missing.stderr.once('data', (data) => resolve(data.toString())));
-    expect(await error).toContain('Open Codex');
+    expect(await error).toContain('starting Codex directly');
     missing.kill();
   } finally { child?.kill(); host.close(); rmSync(directory, { recursive: true, force: true }); }
 });
