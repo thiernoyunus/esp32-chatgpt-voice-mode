@@ -18,6 +18,9 @@
 #include "lvgl_display.h"
 #include "display/voice_character.h"
 #include "display/watch_palette.h"
+#include "display/mascot_frames.h"
+#include <esp_random.h>
+#include <strings.h>
 
 #define TAG "MCP"
 
@@ -114,6 +117,47 @@ void McpServer::AddCommonTools() {
                                               0, voice_character::kColorCount - 1);
                 return std::string("It is now a ") + voice_character::NameOf(voice_character::kShapeNames, worn_shape, voice_character::kShapeCount) +
                     " in " + voice_character::NameOf(voice_character::kColourNames, worn_colour, voice_character::kColorCount) + ".";
+            });
+    }
+    if (display) {
+        AddTool("self.screen.set_mascot",
+            "Change the mascot on the call screen. Name one to switch to it; leave the name "
+            "out to switch to a random other mascot. An unrecognised name is refused with the "
+            "full list. Always answers with the mascot now on screen.",
+            PropertyList({
+                Property("mascot", kPropertyTypeString, std::string(""))
+            }),
+            [](const PropertyList& properties) -> ReturnValue {
+                std::string list;
+                for (int i = 0; i < mascot::kMascotCount; ++i)
+                    list += std::string(i ? ", " : "") + mascot::kMascots[i].name;
+                auto name = properties["mascot"].value<std::string>();
+                Settings saved("display", false);
+                const int worn = std::clamp(static_cast<int>(saved.GetInt("mascot", 0)), 0, mascot::kMascotCount - 1);
+                int pick = -1;
+                if (name.empty()) {
+                    // Any mascot but the one already on screen.
+                    pick = mascot::kMascotCount < 2 ? worn
+                        : (worn + 1 + static_cast<int>(esp_random() % (mascot::kMascotCount - 1))) % mascot::kMascotCount;
+                } else {
+                    for (int i = 0; i < mascot::kMascotCount; ++i)
+                        if (strcasecmp(name.c_str(), mascot::kMascots[i].name) == 0) pick = i;
+                    if (pick < 0) return "There is no mascot called \"" + name + "\". The mascots are: " + list + ".";
+                }
+                if (!Application::GetInstance().SetMascot(pick)) {
+                    return std::string("This watch has no mascot pictures, so there is no mascot to change.");
+                }
+                return std::string("The mascot is now ") + mascot::kMascots[pick].name + ".";
+            });
+    }
+    if (display) {
+        AddTool("self.screen.show_cant_do",
+            "Make the mascot look upset for a few seconds. Call it right after telling the user "
+            "you could not do what they asked.",
+            PropertyList(),
+            [display](const PropertyList&) -> ReturnValue {
+                return display->FlashMascotError() ? std::string("Shown.")
+                                               : std::string("This watch has no mascot to show it.");
             });
     }
     if (display && display->GetTheme() != nullptr) {

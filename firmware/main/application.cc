@@ -102,6 +102,16 @@ bool Application::SetUiTheme(int theme) {
     return true;
 }
 
+bool Application::SetMascot(int index) {
+    auto lcd = dynamic_cast<LcdDisplay*>(Board::GetInstance().GetDisplay());
+    if (lcd == nullptr || !lcd->HasMascot() || index < 0 || index >= mascot::kMascotCount) return false;
+    { Settings s("display", true); s.SetInt("mascot", index); }
+    lcd->SetMascot(index);
+    // The menu shows the worn mascot; on the main task, as for the theme.
+    Schedule([this]() { RefreshWatchInfo(); });
+    return true;
+}
+
 void Application::Initialize() {
     auto& board = Board::GetInstance();
     SetDeviceState(kDeviceStateStarting);
@@ -1755,6 +1765,9 @@ void Application::RefreshWatchInfo() {
     auto display = dynamic_cast<LcdDisplay*>(board.GetDisplay());
     if (!display) return;
     WatchUi::Info info;
+    info.mascot = display->HasMascot()
+        ? std::clamp(static_cast<int>(Settings("display", false).GetInt("mascot", 0)), 0, mascot::kMascotCount - 1)
+        : -1;
     Settings saved_display("display", false);
     info.brightness = saved_display.GetInt("brightness", 75);
     info.sleep_seconds = saved_display.GetInt("sleep_seconds", 60);
@@ -1918,6 +1931,9 @@ void Application::OnWatchAction(WatchUi::Action action, int value,
             case WatchUi::Action::SelectShape:
                 SetVoiceCharacter(value, -1);
                 pending_watch_notification_ = "Shape saved";
+                break;
+            case WatchUi::Action::SelectMascot:
+                if (SetMascot(value)) pending_watch_notification_ = "Mascot saved";
                 break;
             case WatchUi::Action::SelectColour:
                 SetVoiceCharacter(-1, value);

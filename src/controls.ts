@@ -311,6 +311,32 @@ export function createDeviceControlServer(bridge: DeviceToolBridge): McpServer {
   );
 
   server.registerTool(
+    'set_mascot',
+    {
+      title: 'Change the mascot on screen',
+      description:
+        "Change the mascot on the device's call screen - a character such as Felipe, Alfred, Iggy or Todd. Name one to switch to it; leave the name out to switch to a random other mascot. The device refuses a name it does not have and answers with the full list, and always says which mascot is now on screen.",
+      inputSchema: {
+        mascot: z.string().min(1).optional(),
+        device_id: z.string().min(1).optional(),
+      },
+    },
+    async ({ mascot, device_id }) =>
+      describeOutcome(await bridge.call('self.screen.set_mascot', { mascot: mascot ?? '' }, device_id)),
+  );
+
+  server.registerTool(
+    'show_cant_do',
+    {
+      title: 'Show that you could not do it',
+      description:
+        "Every time you tell the user you were not able to do something they asked - for example \"Sorry, I wasn't able to open that website\" - call this right then. The mascot on the watch looks upset for a few seconds, then carries on. Do not call it for anything else.",
+      inputSchema: { device_id: z.string().min(1).optional() },
+    },
+    async ({ device_id }) => describeOutcome(await bridge.call('self.screen.show_cant_do', {}, device_id)),
+  );
+
+  server.registerTool(
     'set_theme',
     {
       title: 'Change the screen theme',

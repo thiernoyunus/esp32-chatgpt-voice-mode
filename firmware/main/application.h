@@ -92,6 +92,13 @@ public:
     bool SetUiTheme(int theme);
 
     /**
+     * Save and show one of mascot::kMascots. Shared with the voice tool so a
+     * spoken "switch to Iggy" and a tap in Settings land on the same choice.
+     * False when no mascot pictures are on the watch.
+     */
+    bool SetMascot(int index);
+
+    /**
      * Schedule a callback to be executed in the main task
      */
     void Schedule(std::function<void()>&& callback);
