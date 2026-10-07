@@ -787,6 +787,8 @@ void WatchUi::SetInfo(const Info& info) {
     // their own trigger - folded in with the chats it would only ever have
     // redrawn a page the row is not on.
     const bool captions_changed=info_.captions!=info.captions;
+    // A spoken "switch to Iggy" changes the mascot while its row may be up.
+    const bool mascot_changed=info_.mascot!=info.mascot;
     bool sleep_changed=info_.sleep_seconds!=info.sleep_seconds;
     bool notice_changed=info_.notice!=info.notice;
     info_=info;
@@ -796,7 +798,8 @@ void WatchUi::SetInfo(const Info& info) {
        ||(page_==Page::Chats&&chats_changed)
        ||(page_==Page::Sleep&&sleep_changed)
        ||(page_==Page::Brightness&&sleep_changed)
-       ||(page_==Page::CodexSettings&&captions_changed)) Show(page_);
+       ||(page_==Page::CodexSettings&&(captions_changed||mascot_changed))
+       ||(page_==Page::Mascots&&mascot_changed)) Show(page_);
     else if (notice_changed) UpdateNotice();
 }
 void WatchUi::Tick(const char* clock,const char* date){
