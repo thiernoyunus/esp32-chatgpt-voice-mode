@@ -464,6 +464,16 @@ bool CodexVoiceProtocol::SendSignalOffer(const uint8_t* data, size_t size) {
     if (!model.empty()) {
         cJSON_AddStringToObject(root, "model", model.c_str());
     }
+    // Send the saved reasoning choice independently of the selected model.
+    // Default leaves the choice to Codex on the Mac.
+    Settings codex_settings("codex", false);
+    auto reasoning = codex_settings.GetString("reasoning", "Default");
+    for (auto& letter : reasoning) {
+        if (letter >= 'A' && letter <= 'Z') letter += 'a' - 'A';
+    }
+    if (!reasoning.empty() && reasoning != "default") {
+        cJSON_AddStringToObject(root, "reasoningEffort", reasoning.c_str());
+    }
     // A saved chat id resumes that Codex chat; no id means a new chat. The
     // chat stays visible in Codex unless the user turned on temporary chats.
     const auto chat = settings.GetString("chat", "");
@@ -498,6 +508,11 @@ bool CodexVoiceProtocol::SelectModel(size_t index) {
     return true;
 }
 
+bool CodexVoiceProtocol::RefreshChats() {
+    chat_list_request_id_ = "chats-" + std::to_string(esp_random());
+    return SendText("{\"type\":\"chat_list_request\",\"requestId\":\"" + chat_list_request_id_ + "\"}");
+}
+
 // index 0 is the "New chat" row the UI prepends, so it clears the saved id.
 bool CodexVoiceProtocol::SelectChat(size_t index) {
     if (index > chats_.size()) return false;
@@ -521,11 +536,55 @@ void CodexVoiceProtocol::HandleSignal(const char* data, size_t size) {
         return;
     }
     const cJSON* request_id = cJSON_GetObjectItemCaseSensitive(root, "requestId");
+    const bool picker_response = cJSON_IsString(type) && strcmp(type->valuestring, "chat_list") == 0;
+    const auto& expected_id = picker_response ? chat_list_request_id_ : request_id_;
     if (!cJSON_IsString(type) || !cJSON_IsString(request_id) ||
-        request_id_ != request_id->valuestring) {
+        expected_id != request_id->valuestring) {
         cJSON_Delete(root);
         return;
     }
+    if (picker_response || strcmp(type->valuestring, "realtime_answer") == 0) {
+        // Recent Codex chats for the picker. The id this call landed on only
+        // replaces an existing selection, so a stale/deleted chat heals itself
+        // while the default stays "new chat on every tap".
+        const cJSON* chats = cJSON_GetObjectItemCaseSensitive(root, "chats");
+        const cJSON* thread = cJSON_GetObjectItemCaseSensitive(root, "threadId");
+        if (cJSON_IsArray(chats) || cJSON_IsString(thread)) {
+            std::vector<ChatChoice> chat_choices;
+            const cJSON* entry = nullptr;
+            if (cJSON_IsArray(chats) && cJSON_GetArraySize(chats) <= 20) {
+                cJSON_ArrayForEach(entry, chats) {
+                    const cJSON* id = cJSON_GetObjectItemCaseSensitive(entry, "id");
+                    const cJSON* name = cJSON_GetObjectItemCaseSensitive(entry, "name");
+                    const cJSON* folder = cJSON_GetObjectItemCaseSensitive(entry, "folder");
+                    if (cJSON_IsString(id) && cJSON_IsString(name) &&
+                        id->valuestring[0] && strlen(id->valuestring) <= 64 &&
+                        name->valuestring[0] && strlen(name->valuestring) <= 60) {
+                        const std::string folder_name =
+                            cJSON_IsString(folder) && strlen(folder->valuestring) <= 60
+                                ? folder->valuestring
+                                : "";
+                        chat_choices.push_back({id->valuestring, name->valuestring, folder_name});
+                    }
+                }
+            }
+            const std::string active_id =
+                cJSON_IsString(thread) && strlen(thread->valuestring) <= 64
+                    ? thread->valuestring : "";
+            const auto session_id = expected_id;
+            Application::GetInstance().Schedule(
+                [this, chat_choices = std::move(chat_choices), active_id, session_id, picker_response]() mutable {
+                    if ((picker_response ? chat_list_request_id_ : request_id_) != session_id) return;
+                    chats_ = std::move(chat_choices);
+                    if (active_id.empty()) return;
+                    Settings read("codex_voice", false);
+                    if (read.GetString("chat", "").empty()) return;
+                    Settings settings("codex_voice", true);
+                    settings.SetString("chat", active_id);
+                });
+        }
+    }
+    if (picker_response) { cJSON_Delete(root); return; }
     if (strcmp(type->valuestring, "realtime_answer") == 0) {
         const cJSON* models = cJSON_GetObjectItemCaseSensitive(root, "models");
         if (cJSON_IsArray(models) && cJSON_GetArraySize(models) <= 40) {
@@ -554,45 +613,6 @@ void CodexVoiceProtocol::HandleSignal(const char* data, size_t size) {
                     }
                 }
             });
-        }
-        // Recent Codex chats for the picker. The id this call landed on only
-        // replaces an existing selection, so a stale/deleted chat heals itself
-        // while the default stays "new chat on every tap".
-        const cJSON* chats = cJSON_GetObjectItemCaseSensitive(root, "chats");
-        const cJSON* thread = cJSON_GetObjectItemCaseSensitive(root, "threadId");
-        if (cJSON_IsArray(chats) || cJSON_IsString(thread)) {
-            std::vector<ChatChoice> chat_choices;
-            const cJSON* entry = nullptr;
-            if (cJSON_IsArray(chats) && cJSON_GetArraySize(chats) <= 20) {
-                cJSON_ArrayForEach(entry, chats) {
-                    const cJSON* id = cJSON_GetObjectItemCaseSensitive(entry, "id");
-                    const cJSON* name = cJSON_GetObjectItemCaseSensitive(entry, "name");
-                    const cJSON* folder = cJSON_GetObjectItemCaseSensitive(entry, "folder");
-                    if (cJSON_IsString(id) && cJSON_IsString(name) &&
-                        id->valuestring[0] && strlen(id->valuestring) <= 64 &&
-                        name->valuestring[0] && strlen(name->valuestring) <= 60) {
-                        const std::string folder_name =
-                            cJSON_IsString(folder) && strlen(folder->valuestring) <= 60
-                                ? folder->valuestring
-                                : "";
-                        chat_choices.push_back({id->valuestring, name->valuestring, folder_name});
-                    }
-                }
-            }
-            const std::string active_id =
-                cJSON_IsString(thread) && strlen(thread->valuestring) <= 64
-                    ? thread->valuestring : "";
-            const auto session_id = request_id_;
-            Application::GetInstance().Schedule(
-                [this, chat_choices = std::move(chat_choices), active_id, session_id]() mutable {
-                    if (request_id_ != session_id) return;
-                    chats_ = std::move(chat_choices);
-                    if (active_id.empty()) return;
-                    Settings read("codex_voice", false);
-                    if (read.GetString("chat", "").empty()) return;
-                    Settings settings("codex_voice", true);
-                    settings.SetString("chat", active_id);
-                });
         }
         const cJSON* sdp = cJSON_GetObjectItemCaseSensitive(root, "sdp");
         if (cJSON_IsString(sdp) && peer_ != nullptr) {

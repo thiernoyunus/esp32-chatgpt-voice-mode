@@ -92,6 +92,7 @@ bool Application::SetVoiceCharacter(int shape, int colour) {
 }
 
 bool Application::SetUiTheme(int theme) {
+    if (theme < 0) return true;
     Settings s("display", true);
     s.SetInt("ui_theme", std::clamp(theme, 0, watch_palette::kThemeCount - 1));
     // The watch draws its own colours, so changing the saved value is not
@@ -1077,13 +1078,16 @@ void Application::InitializeSystemTime() {
 #endif
 
 void Application::SleepScreen() {
+    auto& board = Board::GetInstance();
+    if (board.IsExternalPowerConnected()) {
+        NoteUserActivity();
+        return;
+    }
     if (is_screen_asleep_) {
         return;
     }
     is_screen_asleep_ = true;
     ESP_LOGI(TAG, "Screen asleep after %d s idle", idle_seconds_);
-
-    auto& board = Board::GetInstance();
     board.GetDisplay()->SetPowerSaveMode(true);
     auto backlight = board.GetBacklight();
     if (backlight != nullptr) {
@@ -1854,6 +1858,11 @@ void Application::OnWatchAction(WatchUi::Action action, int value,
             case WatchUi::Action::SetupWifi:
                 if (protocol_) protocol_->CloseAudioChannel();
                 board.EnterWifiConfigMode();
+                break;
+            case WatchUi::Action::Models:
+                if (auto voice = dynamic_cast<CodexVoiceProtocol*>(protocol_.get())) {
+                    if (!voice->RefreshChats()) pending_watch_notification_ = "Connect to the Mac to refresh chats";
+                }
                 break;
             case WatchUi::Action::SelectModel:
                 if (auto voice = dynamic_cast<CodexVoiceProtocol*>(protocol_.get())) {

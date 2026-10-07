@@ -50,6 +50,13 @@ export const deviceMcpReplySchema = z.object({
 
 export type DeviceMcpReply = z.infer<typeof deviceMcpReplySchema>;
 
+const watchChatLabelSchema = z.string().min(1).max(60).refine(value => Buffer.byteLength(value, 'utf8') <= 60, 'Watch chat labels must fit 60 UTF-8 bytes');
+
+export const voiceChatListSchema = z.array(z.object({
+  id: z.string().min(1).max(64), name: watchChatLabelSchema,
+  folder: watchChatLabelSchema.optional(),
+})).max(20);
+
 export const serverToDeviceMessageSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('realtime_answer'),
@@ -61,17 +68,9 @@ export const serverToDeviceMessageSchema = z.discriminatedUnion('type', [
       .optional(),
     selectedModel: z.string().min(1).max(128).optional(),
     threadId: z.string().min(1).max(64).optional(),
-    chats: z
-      .array(
-        z.object({
-          id: z.string().min(1).max(64),
-          name: z.string().min(1).max(60),
-          folder: z.string().min(1).max(60).optional(),
-        }),
-      )
-      .max(20)
-      .optional(),
+    chats: voiceChatListSchema.optional(),
   }),
+  z.object({ type: z.literal('chat_list'), requestId: z.string().min(1).max(64), chats: voiceChatListSchema }),
   z.object({
     type: z.literal('realtime_transcript_delta'),
     requestId: z.string().min(1),

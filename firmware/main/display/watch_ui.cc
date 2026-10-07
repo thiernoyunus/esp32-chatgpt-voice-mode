@@ -596,7 +596,7 @@ void WatchUi::Show(Page page) {
             Emit(Action::SelectChat,0);Show(Page::CodexSettings);
         },info_.chat=="New chat");
         if(info_.chats.empty()){
-            auto l=Label(column_,"Open a voice call to load\nyour recent chats.",full_page_?362:236);
+            auto l=Label(column_,"No recent saved chats.",full_page_?362:236);
             lv_label_set_long_mode(l,LV_LABEL_LONG_WRAP);
         }
         for(size_t i=0;i<info_.chats.size();++i){
@@ -620,7 +620,7 @@ void WatchUi::Show(Page page) {
         }break;
     case Page::Reasoning: {
         Header("Reasoning",Page::CodexSettings);Column();
-        const char* levels[]={"Low","Medium","High","XHigh","Max","Ultra"};
+        const char* levels[]={"Default","Low","Medium","High","XHigh","Max","Ultra"};
         for(const auto& level:levels){
             const bool current=info_.reasoning==level;
             Row(level,nullptr,[this,level]{

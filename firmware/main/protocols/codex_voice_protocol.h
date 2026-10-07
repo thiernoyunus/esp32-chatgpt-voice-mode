@@ -23,10 +23,11 @@ public:
     struct ChatChoice { std::string id; std::string name; std::string folder; };
     const std::vector<ModelChoice>& GetModels() const { return models_; }
     bool SelectModel(size_t index);
-    // Recent Codex chats offered by the bridge on the last answer.
+    // Current Codex chats, refreshed when the picker opens.
     const std::vector<ChatChoice>& GetChats() const { return chats_; }
     // Pick the chat the next call resumes. index 0 means "New chat".
     bool SelectChat(size_t index);
+    bool RefreshChats();
     CodexVoiceProtocol();
     ~CodexVoiceProtocol() override;
 
@@ -73,6 +74,7 @@ private:
     std::atomic<bool> closing_{false};
     std::atomic<bool> speaking_{false};
     std::string request_id_;
+    std::string chat_list_request_id_;
     uint32_t uplink_pts_ms_ = 0;
     VoiceReadiness readiness_;
 

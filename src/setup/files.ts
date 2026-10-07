@@ -147,6 +147,7 @@ export function buildMacEnvFileContent(secret: string): string {
     '',
     '# These are passed to ./scripts/install-service.sh, not read from this file:',
     '#   VOICEMODE_CODEX_MODEL        pin a Codex model for calls',
+    '#   VOICEMODE_CODEX_REASONING_EFFORT override Codex reasoning for calls',
     '#   VOICEMODE_CODEX_DISABLE_MCP  comma-separated MCP servers to switch off',
     '#   VOICEMODE_CODEX_BIN          path to the codex binary, if not the bundled one',
     '#   VOICEMODE_CODEX_ROOT         absolute folder for new voice chats',

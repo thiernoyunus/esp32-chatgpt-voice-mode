@@ -13,6 +13,11 @@ int Axp2101::GetBatteryCurrentDirection() {
     return (ReadReg(0x01) & 0b01100000) >> 5;
 }
 
+bool Axp2101::IsExternalPowerConnected() {
+    // AXP2101 status 1: USB power is valid, even after charging finishes.
+    return (ReadReg(0x00) & 0x20) != 0;
+}
+
 bool Axp2101::IsCharging() {
     return GetBatteryCurrentDirection() == 1;
 }
