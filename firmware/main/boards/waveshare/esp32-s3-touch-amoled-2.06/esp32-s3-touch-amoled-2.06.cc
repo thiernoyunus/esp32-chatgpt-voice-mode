@@ -171,6 +171,24 @@ protected:
     }
 };
 
+// Read by TouchInterrupt, so it lives in internal RAM (see there).
+static DRAM_ATTR TaskHandle_t s_touch_task_for_isr = nullptr;
+
+// The button component installs the GPIO interrupt service as IRAM-safe,
+// so this runs even while flash is busy (saving settings, reading Felipe's
+// pictures). Then flash *and PSRAM* are out of reach, so it touches only
+// IRAM code and internal-RAM data: not `tp` or this board object, which
+// live in PSRAM. Either crashed with "Cache disabled but cached memory
+// region accessed".
+static void IRAM_ATTR TouchInterrupt(esp_lcd_touch_handle_t) {
+    if (s_touch_task_for_isr != nullptr) {
+        BaseType_t higher_priority_woken = pdFALSE;
+        vTaskNotifyGiveFromISR(s_touch_task_for_isr, &higher_priority_woken);
+        if (higher_priority_woken) portYIELD_FROM_ISR();
+    }
+}
+// (A free function: IRAM_ATTR on a function defined inside the class fails to link.)
+
 class WaveshareEsp32s3TouchAMOLED2inch06 : public WifiBoard {
 private:
     i2c_master_bus_handle_t i2c_bus_;
@@ -181,15 +199,6 @@ private:
     esp_lcd_touch_handle_t touch_handle_ = nullptr;
     TaskHandle_t touch_task_handle_ = nullptr;
     std::atomic<bool> touch_interrupt_ready_{false};
-
-    static void TouchInterrupt(esp_lcd_touch_handle_t tp) {
-        auto* self = static_cast<WaveshareEsp32s3TouchAMOLED2inch06*>(tp->config.user_data);
-        if (self != nullptr && self->touch_task_handle_ != nullptr) {
-            BaseType_t higher_priority_woken = pdFALSE;
-            vTaskNotifyGiveFromISR(self->touch_task_handle_, &higher_priority_woken);
-            if (higher_priority_woken) portYIELD_FROM_ISR();
-        }
-    }
 
     void InitializeCodecI2c() {
         i2c_master_bus_config_t i2c_bus_cfg = {
@@ -317,6 +326,7 @@ private:
             ESP_LOGE(TAG, "Could not start touch task");
             return;
         }
+        s_touch_task_for_isr = touch_task_handle_;
         err = esp_lcd_touch_register_interrupt_callback_with_data(
             touch_handle_, TouchInterrupt, this);
         touch_interrupt_ready_ = err == ESP_OK;
