@@ -1125,6 +1125,8 @@ export class CodexAppServerClient {
   #recentChatListRefreshAfterMilliseconds = 0;
   #activityGeneration = 0;
   readonly #connectorMetadataCache: ConnectorMetadataCache;
+  // A tool caption still waiting for its app logo; see #handleNotification.
+  #flushPendingActivity: (() => void) | null = null;
   readonly #desktopConversationBridge = new DesktopConversationBridge();
 
   constructor(readonly workingDirectory: string) {
@@ -1547,6 +1549,12 @@ export class CodexAppServerClient {
       // offer should open a new chat rather than extend this one.
       realtimeSession.liveSessionSeen = true;
       this.#lastFailedSession = null;
+      // A caption still waiting for its logo goes out now, alone: a quick
+      // tool can finish inside the wait, and dropping it would skip the
+      // caption entirely instead of just its logo.
+      const flush = this.#flushPendingActivity;
+      this.#flushPendingActivity = null;
+      flush?.();
       const generation = ++this.#activityGeneration;
       const isCurrent = () => this.#activeRealtimeSession === realtimeSession &&
         this.#activityGeneration === generation;
@@ -1570,12 +1578,18 @@ export class CodexAppServerClient {
           const url = metadata?.iconUrlDark ?? metadata?.iconUrl;
           return url && isCurrent() ? resolveIconPixels(url) : null;
         }).catch(() => null);
+        // Runs at most once: a newer status clears it before calling it, and
+        // the timer below clears it before sending.
+        this.#flushPendingActivity = () => {
+          if (this.#activeRealtimeSession === realtimeSession) sendStatus();
+        };
         const late = Symbol('late');
         void Promise.race([
           pixels,
           new Promise<typeof late>((resolve) => setTimeout(resolve, ACTIVITY_ICON_WAIT_MILLISECONDS, late)),
         ]).then((first) => {
           if (!isCurrent()) return;
+          this.#flushPendingActivity = null;
           if (first !== late) { sendStatus(first ?? undefined); return; }
           sendStatus();
           void forwardActivityIcon(pixels, isCurrent, sendStatus);
