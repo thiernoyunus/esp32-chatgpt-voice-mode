@@ -279,10 +279,16 @@ cd ..
 ./scripts/install-service.sh
 ```
 
-Calls work without Codex desktop open. The installer also registers a small
-companion that Codex starts inside the app; while a Codex chat is loaded, calls
-go through it and get the app's project and task tools. Without it the listener
-starts Codex itself, as before, and only those desktop-only tools are missing.
+Calls work without Codex desktop open: the listener runs its own Codex, as
+before. The installer also registers a small companion that Codex desktop runs
+in the background while the app is open (no chat needed). Each call checks for
+it first; when it answers, that call goes through it and gets the app's project
+and task tools, otherwise the call uses the listener's own Codex without them.
+
+The companion is registered from this folder. If the folder moves or is
+deleted, Codex desktop logs "esp_codex_host failed to start" and the project
+tools quietly disappear; run `bun scripts/install-desktop-host.ts` from the new
+location and restart Codex desktop.
 
 Every MCP server in your Codex config starts before a call's voice does, so a
 slow or logged-out one delays every call (the watch gives up at 30 seconds).

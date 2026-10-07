@@ -38,6 +38,7 @@ import {
   type ServerToDeviceMessage,
 } from './protocol';
 import { CodexAppServerClient, describeRealtimeFailure } from './codex';
+import { desktopHostAnswers } from './desktop-core';
 import { DeviceToolBridge, handleControlRequest } from './controls';
 import { parseDevelopmentVariableMap } from './vars';
 import { ListenerHealth } from './health';
@@ -500,6 +501,32 @@ export async function runListener(
 ): Promise<void> {
   const configuration = await readListenerConfiguration(arguments_);
   const codexClient = new CodexAppServerClient(configuration.workingDirectory);
+  // A call borrows the Codex desktop host when one answers, for the desktop
+  // app's project and task tools; otherwise it uses the listener's own Codex.
+  // Each call stays on the Codex it started with, and a borrowed one is
+  // closed when its call ends. A call on the host ends if Codex desktop quits.
+  const borrowedCodex = new Map<string, CodexAppServerClient>();
+  const endCall = (requestId: string): void => {
+    const borrowed = borrowedCodex.get(requestId);
+    borrowedCodex.delete(requestId);
+    void (borrowed ?? codexClient).stopRealtimeSession(requestId).finally(() => borrowed?.close());
+  };
+  const codexForCall = async (): Promise<CodexAppServerClient> => {
+    if (!await desktopHostAnswers()) return codexClient;
+    const borrowed = new CodexAppServerClient(configuration.workingDirectory, true);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([borrowed.start(), new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('timed out')), 5_000);
+      })]);
+      console.log('This call uses the Codex desktop host: project and task tools available.');
+      return borrowed;
+    } catch (error) {
+      borrowed.close();
+      console.log(`Codex desktop host did not start (${error instanceof Error ? error.message : 'error'}); using the listener's own Codex.`);
+      return codexClient;
+    } finally { clearTimeout(timer); }
+  };
 
   const activeCalls = new Map<string, DirectVoiceCallLog>();
   const callSockets = new Map<string, DeviceSocket>();
@@ -605,7 +632,7 @@ export async function runListener(
         }
         if (plan.kind === 'voice_stop') {
           if (callSockets.get(plan.requestId) !== socket) return;
-          void codexClient.stopRealtimeSession(plan.requestId);
+          endCall(plan.requestId);
           const call = activeCalls.get(plan.requestId);
           if (call !== undefined) {
             console.log(`Call ended: ${call.describe()}`);
@@ -617,6 +644,7 @@ export async function runListener(
 
         const offer = plan.offer;
         // Codex has one voice session. A new offer replaces a call even if its stop was lost.
+        for (const requestId of [...borrowedCodex.keys()]) endCall(requestId);
         activeCalls.clear();
         callSockets.clear();
         const call = new DirectVoiceCallLog(offer.requestId);
@@ -634,8 +662,10 @@ export async function runListener(
         // Codex takes about twenty seconds to come up, and the device can dial
         // in before then. Waiting here turns a lost first call into a slow one.
         void codexReady
-          .then(() =>
-            codexClient.startRealtimeSession(
+          .then(() => codexForCall())
+          .then((codex) => {
+            if (codex !== codexClient) borrowedCodex.set(offer.requestId, codex);
+            return codex.startRealtimeSession(
             {
               type: 'realtime_offer',
               requestId: offer.requestId,
@@ -647,6 +677,8 @@ export async function runListener(
               voice: offer.voice,
             },
             (failureMessage) => {
+              borrowedCodex.get(offer.requestId)?.close();
+              borrowedCodex.delete(offer.requestId);
               call.noteError();
               health.noteCallFailure(failureMessage);
               activeCalls.delete(offer.requestId);
@@ -672,7 +704,8 @@ export async function runListener(
                 sendToDevice(socket, encodeServerToDeviceMessage(deviceMessage));
               }
             },
-          ))
+          );
+          })
           .then((result) => {
             health.clearCallFailure();
             call.noteAnswer(result.threadId);
@@ -697,6 +730,8 @@ export async function runListener(
             );
           })
           .catch((error: unknown) => {
+            borrowedCodex.get(offer.requestId)?.close();
+            borrowedCodex.delete(offer.requestId);
             call.noteError();
             const failureMessage =
               error instanceof Error ? error.message : String(error);
@@ -723,7 +758,7 @@ export async function runListener(
         }
         for (const [requestId, callSocket] of callSockets) {
           if (callSocket !== socket) continue;
-          void codexClient.stopRealtimeSession(requestId);
+          endCall(requestId);
           callSockets.delete(requestId);
           activeCalls.delete(requestId);
         }
@@ -756,6 +791,7 @@ export async function runListener(
 
   const stop = (): void => {
     server.stop(true);
+    for (const borrowed of borrowedCodex.values()) borrowed.close();
     codexClient.close();
     process.exit(0);
   };

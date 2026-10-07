@@ -19,6 +19,7 @@ import { voiceStorageError } from './voice-storage';
 import { releaseVoiceChat } from './voice-release';
 import { classifyVoiceFailure } from './failures';
 import { DesktopCodexProcess } from './desktop-core';
+import { resolveCodexExecutable } from './codex-executable';
 
 const CODEX_APP_SERVER_REQUEST_TIMEOUT_MILLISECONDS = 45_000;
 // Catalog fetch is bounded well under the 30s realtime_offer readiness window so
@@ -752,7 +753,8 @@ export class DesktopConversationBridge {
   #socket: Socket | null = null;
   #reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   #frameBuffer = Buffer.alloc(0);
-  #sourceClientId = `esp32-voice-mode-${process.pid}`;
+  static #instances = 0;
+  #sourceClientId = `esp32-voice-mode-${process.pid}-${DesktopConversationBridge.#instances++}`;
   #initializeRequestId: string | null = null;
   #connected = false;
   #closed = false;
@@ -1182,8 +1184,15 @@ export class CodexAppServerClient {
   #flushPendingActivity: (() => void) | null = null;
   readonly #desktopConversationBridge = new DesktopConversationBridge();
 
-  constructor(readonly workingDirectory: string) {
-    this.#process = new DesktopCodexProcess(workingDirectory, buildCodexOverrides());
+  /**
+   * `desktopHost`: borrow the Codex desktop host for one call (it brings the
+   * desktop app's project tools, but only runs while Codex desktop does).
+   * Otherwise this is the listener's own Codex, which never depends on the
+   * desktop and takes the listener down with it if it dies.
+   */
+  constructor(readonly workingDirectory: string, readonly desktopHost = false) {
+    this.#process = new DesktopCodexProcess(workingDirectory, buildCodexOverrides(), undefined,
+      desktopHost ? undefined : resolveCodexExecutable().path);
     this.#readlineInterface = createInterface({ input: this.#process.stdout });
     this.#readlineInterface.on('line', (line) => this.#handleLine(line));
     this.#process.stderr.on('data', (chunk) => process.stderr.write(chunk));
@@ -1200,7 +1209,7 @@ export class CodexAppServerClient {
       }
       this.#pendingRequestMap.clear();
       this.#failRealtimeSession(error);
-      if (!this.#process.killed) {
+      if (!this.#process.killed && !this.desktopHost) {
         // launchd can restart this only after the process exits. If Codex
         // dies underneath us, staying up would leave a listener that looks
         // alive and cannot answer a call.

@@ -1,9 +1,9 @@
 import { expect, test } from 'bun:test';
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createConnection } from 'node:net';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
-import { DesktopCodexProcess, startDesktopCoreHost } from '../desktop-core';
+import { DesktopCodexProcess, desktopHostAnswers, startDesktopCoreHost } from '../desktop-core';
 
 test('desktop owns the core, preserves its messages, and rejects invalid startup data', async () => {
   const directory = mkdtempSync('/tmp/esp-core-check-');
@@ -26,6 +26,7 @@ test('desktop owns the core, preserves its messages, and rejects invalid startup
     lines.close();
   };
   try {
+    expect(await desktopHostAnswers(directory)).toBe(true);
     await check();
     const invalid = createConnection(host.path);
     const closed = new Promise<void>((resolve) => invalid.once('close', () => resolve()));
@@ -33,12 +34,19 @@ test('desktop owns the core, preserves its messages, and rejects invalid startup
     invalid.write(JSON.stringify({ cwd: directory, overrides: ['--listen', 'ws://0.0.0.0:1234'] }) + '\n');
     await closed;
     host.close();
+    // A socket file left behind by a host that stopped does not count.
+    expect(await desktopHostAnswers(directory)).toBe(false);
     host = await startDesktopCoreHost(executable, directory);
     await check();
     chmodSync(host.path, 0o666);
     const missing = new DesktopCodexProcess(directory, [], directory);
     const error = new Promise<string>((resolve) => missing.stderr.once('data', (data) => resolve(data.toString())));
-    expect(await error).toContain('starting Codex directly');
+    expect(await error).toContain('unavailable');
     missing.kill();
   } finally { child?.kill(); host.close(); rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('the desktop host file loads under Codex desktop node, which cannot resolve extensionless local imports', () => {
+  const source = readFileSync(new URL('../desktop-core.ts', import.meta.url), 'utf8');
+  expect(source).not.toMatch(/from '\.\.?\//);
 });
