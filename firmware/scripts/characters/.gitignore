@@ -1,0 +1,6 @@
+# Local working files: the character engine copied out of the Codex app, and
+# raw recordings. Only the finished pack (main/assets/characters/) is committed.
+runtime
+runtime-src/
+frames/
+watch/

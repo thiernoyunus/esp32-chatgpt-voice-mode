@@ -45,8 +45,8 @@ constexpr int kPanelWidth = 410, kPanelHeight = 502;
 // Twice the round watch's character. The canvas holds the character plus the
 // rings that orbit it, and it is repainted 30 times a second, so this is the
 // knob to turn if the redraw ever costs too much - the layout below still
-// holds at 200.
-constexpr int kOrbSize = 236;
+// holds at 200. 256 fits Felipe's 252x236 pictures (character-study).
+constexpr int kOrbSize = 256;
 // Dead centre of the panel, so the character is not floating in the top half.
 constexpr int kOrbTop = (kPanelHeight - kOrbSize) / 2;
 constexpr int kNavSize = 48, kNavTop = 36, kNavSide = 24;
