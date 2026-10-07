@@ -1,6 +1,7 @@
 #ifndef LCD_DISPLAY_H
 #define LCD_DISPLAY_H
 
+#include "felipe_player.h"
 #include "gif/lvgl_gif.h"
 #include "lvgl_display.h"
 
@@ -51,6 +52,7 @@ protected:
     lv_obj_t* voice_state_caption_ = nullptr;
     lv_timer_t* voice_orb_timer_ = nullptr;
     lv_color16_t* voice_orb_buffer_ = nullptr;
+    FelipePlayer felipe_;  // draws instead of the blob when his pictures are on the watch
     lv_obj_t* voice_model_label_ = nullptr;
     lv_obj_t* voice_model_panel_ = nullptr;
     // The tool caption that stands in for the state word, and its icon.
@@ -66,6 +68,13 @@ protected:
     bool voice_orb_connecting_ = false;
     // True from the agent's first status report until it answers.
     bool voice_working_ = false;
+    // True while a named tool (an app, or a search) is running: Felipe types
+    // on his keyboard instead of thinking with the lightbulb.
+    bool felipe_tool_ = false;
+    // Felipe's own "agent is busy": unlike voice_working_ it survives the
+    // voice talking (Codex keeps working while it speaks) and clears only when
+    // the turn completes ("Listening") or the call ends.
+    bool felipe_busy_ = false;
     // Where the working cycle is. Held as plain integers so this header does
     // not have to pull in bloub_states.h, whose profile tables are inline.
     // The values are bloub_state_id_t; the cycle order is in lcd_display.cc.

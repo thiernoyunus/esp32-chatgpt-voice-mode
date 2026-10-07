@@ -10,6 +10,9 @@
 #include <memory>
 #include <string>
 
+// Joined Arabic letter shapes; the main fonts only carry each letter on its own.
+LV_FONT_DECLARE(font_noto_sans_arabic_forms_20_4);
+
 class LvglTheme : public Theme {
 public:
     static lv_color_t ParseColor(const std::string& color);
@@ -55,7 +58,10 @@ public:
     inline void set_emoji_collection(std::shared_ptr<EmojiCollection> emoji_collection) {
         emoji_collection_ = emoji_collection;
     }
-    inline void set_text_font(std::shared_ptr<LvglFont> text_font) { text_font_ = text_font; }
+    inline void set_text_font(std::shared_ptr<LvglFont> text_font) {
+        if (text_font != nullptr) text_font->SetFallback(&font_noto_sans_arabic_forms_20_4);
+        text_font_ = text_font;
+    }
     inline void set_icon_font(std::shared_ptr<LvglFont> icon_font) { icon_font_ = icon_font; }
     inline void set_large_icon_font(std::shared_ptr<LvglFont> large_icon_font) {
         large_icon_font_ = large_icon_font;

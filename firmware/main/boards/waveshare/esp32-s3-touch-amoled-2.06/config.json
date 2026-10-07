@@ -18,7 +18,10 @@
                 "CONFIG_FREERTOS_USE_TICKLESS_IDLE=y",
                 "CONFIG_MMAP_FILE_NAME_LENGTH=32",
                 "CONFIG_FLASH_DEFAULT_ASSETS=y",
-                "CONFIG_ESPTOOLPY_FLASHSIZE_32MB=y"
+                "CONFIG_ESPTOOLPY_FLASHSIZE_32MB=y",
+                "CONFIG_PARTITION_TABLE_CUSTOM_FILENAME=\"partitions/v2/32m_watch.csv\"",
+                "CONFIG_LV_USE_BIDI=y",
+                "CONFIG_LV_USE_ARABIC_PERSIAN_CHARS=y"
             ]
         }
     ]

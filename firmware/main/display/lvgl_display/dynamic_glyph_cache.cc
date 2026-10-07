@@ -6,6 +6,9 @@
 
 #define TAG "DynamicGlyphCache"
 
+// Joined Arabic letter shapes: the fallback after the pushed glyphs.
+LV_FONT_DECLARE(font_noto_sans_arabic_forms_20_4);
+
 DynamicGlyphCache::DynamicGlyphCache() : retain_between_batches_(TextGlyphStorageUsesPsram()) {}
 
 lv_font_t* DynamicGlyphCache::EnsureFont(const lv_font_t* base_font, uint8_t bpp) {
@@ -29,7 +32,7 @@ lv_font_t* DynamicGlyphCache::EnsureFont(const lv_font_t* base_font, uint8_t bpp
     font_.static_bitmap = 0;
     font_.underline_position = base_font->underline_position;
     font_.underline_thickness = base_font->underline_thickness;
-    font_.fallback = nullptr;
+    font_.fallback = &font_noto_sans_arabic_forms_20_4;
     font_.user_data = nullptr;
     font_.dsc = &dsc_;
     initialized_ = true;

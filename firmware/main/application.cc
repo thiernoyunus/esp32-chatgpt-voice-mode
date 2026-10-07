@@ -96,8 +96,9 @@ bool Application::SetUiTheme(int theme) {
     Settings s("display", true);
     s.SetInt("ui_theme", std::clamp(theme, 0, watch_palette::kThemeCount - 1));
     // The watch draws its own colours, so changing the saved value is not
-    // enough - the running screen has to be handed the new palette.
-    RefreshWatchInfo();
+    // enough - the running screen has to be handed the new palette. On the
+    // main task: a voice tool calls this from the connection's callback.
+    Schedule([this]() { RefreshWatchInfo(); });
     return true;
 }
 
