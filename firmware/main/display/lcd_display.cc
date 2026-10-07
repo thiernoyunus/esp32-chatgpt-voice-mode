@@ -45,6 +45,7 @@ namespace {
 // orbit turns the whole body at 1.25 turns a second, which at 15 arrives in
 // 30-degree steps and reads as stuttering rather than spinning.
 constexpr uint32_t kFluidOrbFramePeriodMs = 33;
+constexpr uint32_t kVoiceErrorColor = 0xCF4B59;
 
 constexpr uint32_t kVoiceGreen = 0x30C46E;
 constexpr uint32_t kVoiceCyan = 0x2FD8E8;
@@ -1210,6 +1211,8 @@ void LcdDisplay::SetVoiceActivity(const char* activity, const char* icon, const 
         ClearVoiceToolCaption();
         voice_tool_active_ = false;
         voice_working_ = false;
+        felipe_busy_ = false;
+        felipe_tool_ = false;
         ShowVoiceToolCaption(false);
         SetStatus(Lang::Strings::LISTENING);
         return;
@@ -1228,6 +1231,7 @@ void LcdDisplay::SetVoiceActivity(const char* activity, const char* icon, const 
                 self->ReleaseVoiceToolHold();
                 self->voice_tool_active_ = false;
                 self->ShowVoiceToolCaption(false);
+                self->felipe_tool_ = false;
             }, kVoiceToolHoldMs - shown, this);
             if (voice_tool_hold_timer_ != nullptr) {
                 lv_timer_set_repeat_count(voice_tool_hold_timer_, 1);
@@ -1243,6 +1247,12 @@ void LcdDisplay::SetVoiceActivity(const char* activity, const char* icon, const 
      * word, and saying it twice on one screen reads as a stutter. */
     voice_tool_active_ = named_tool;
     if (named_tool) voice_tool_shown_at_ = lv_tick_get();
+    // "Answering…" alone is a plain reply, not work; during work it keeps
+    // whichever prop was already up.
+    if (strcmp(activity, "Answering…") != 0) {
+        felipe_busy_ = true;
+        felipe_tool_ = named_tool;
+    }
     /* Working covers thinking too - the character should be doing something
      * from the first status right through to the answer, and "Thinking" is
      * the one that arrives first. */
@@ -1326,6 +1336,10 @@ void LcdDisplay::SetStatus(const char* status) {
     // already being read out — either way the tool caption is stale. Without
     // clearing it here the pill keeps showing the last tool caption for the
     // rest of the call, because nothing else ever releases the latch.
+    if (strcmp(status, Lang::Strings::STANDBY) == 0 || strcmp(status, Lang::Strings::ERROR) == 0) {
+        felipe_busy_ = false;
+        felipe_tool_ = false;
+    }
     if (strcmp(status, Lang::Strings::STANDBY) == 0 ||
         strcmp(status, Lang::Strings::ERROR) == 0 ||
         strcmp(status, Lang::Strings::SPEAKING) == 0) {
@@ -1364,7 +1378,7 @@ void LcdDisplay::SetStatus(const char* status) {
         voice_orbit_exit_at_ = connecting ? 0 : lv_tick_get();
         voice_orb_connecting_ = connecting;
     }
-    const uint32_t orb_color = strcmp(status, Lang::Strings::ERROR) == 0 ? 0xCF4B59 : 0x7465EB;
+    const uint32_t orb_color = strcmp(status, Lang::Strings::ERROR) == 0 ? kVoiceErrorColor : 0x7465EB;
     const bool was_orb_active = voice_orb_active_;
     voice_orb_color_ = orb_color;
     voice_orb_active_ = orb_active;
@@ -1422,6 +1436,26 @@ bool LcdDisplay::AdvanceWorkingCycle() {
 
 void LcdDisplay::RenderVoiceOrb(float seconds) {
     if (voice_orb_canvas_ == nullptr || voice_orb_buffer_ == nullptr) return;
+
+    /* Felipe, when his pictures are on the watch: asleep outside a call,
+     * painting while it connects, the lightbulb while the agent thinks, the
+     * keyboard while it uses a tool (searches included), resting otherwise.
+     * Talking does not interrupt him: Codex keeps working while it speaks. */
+    if (felipe_.Load()) {
+        const auto state = Application::GetInstance().GetDeviceState();
+        /* Asleep only outside a call. In a call he is never put to sleep by
+         * mute: he keeps thinking or working, and otherwise rests. */
+        const bool in_call = state == kDeviceStateConnecting || state == kDeviceStateListening ||
+                             state == kDeviceStateSpeaking;
+        auto mood = FelipePlayer::Mood::Asleep;
+        if (voice_orb_connecting_) mood = FelipePlayer::Mood::Connecting;
+        else if (voice_orb_color_ == kVoiceErrorColor) mood = FelipePlayer::Mood::Error;
+        else if (in_call && felipe_busy_)
+            mood = felipe_tool_ ? FelipePlayer::Mood::Working : FelipePlayer::Mood::Thinking;
+        else if (in_call) mood = FelipePlayer::Mood::Idle;
+        if (felipe_.Draw(voice_orb_buffer_, voice_orb_size_, mood)) lv_obj_invalidate(voice_orb_canvas_);
+        return;
+    }
 
     /* The character, not a fluid gradient. Ported from bloub (see
      * main/display/bloub/) and drawn into a canvas the panel sizes: 166px on
