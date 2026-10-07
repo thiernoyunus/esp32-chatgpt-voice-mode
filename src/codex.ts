@@ -30,6 +30,8 @@ const CODEX_APP_SERVER_REALTIME_TIMEOUT_MILLISECONDS = 40_000;
 // Recent-chat picker size: the watch shows a short scrollable list, not a
 // full history browser.
 const RECENT_CHAT_LIST_SIZE = 20;
+// How long a tool caption waits for its app logo before going out alone.
+const ACTIVITY_ICON_WAIT_MILLISECONDS = 800;
 
 /**
  * Settings handed to the Codex app-server at startup.
@@ -1176,6 +1178,8 @@ export class CodexAppServerClient {
   #voiceModelCatalogRetryAfterMilliseconds = 0;
   #activityGeneration = 0;
   readonly #connectorMetadataCache: ConnectorMetadataCache;
+  // A tool caption still waiting for its app logo; see #handleNotification.
+  #flushPendingActivity: (() => void) | null = null;
   readonly #desktopConversationBridge = new DesktopConversationBridge();
 
   constructor(readonly workingDirectory: string) {
@@ -1597,26 +1601,45 @@ export class CodexAppServerClient {
       // offer should open a new chat rather than extend this one.
       realtimeSession.liveSessionSeen = true;
       this.#lastFailedSession = null;
-      const generation = ++this.#activityGeneration;
+      const generation = this.#supersedeActivity();
       const isCurrent = () => this.#activeRealtimeSession === realtimeSession &&
         this.#activityGeneration === generation;
       // A new chat's registration turn is not a user request. Keep its
       // Thinking/Answering events off the watch until the first user sentence.
-      if (!realtimeSession.needsName) realtimeSession.onTranscript({
+      const sendStatus = (iconPixels?: string) => realtimeSession.onTranscript({
         type: 'realtime_status',
         requestId: realtimeSession.requestId,
         caption: activity.caption,
         icon: activity.icon,
+        ...(iconPixels !== undefined ? { iconPixels } : {}),
       });
-      if (!realtimeSession.needsName && activity.connectorId !== undefined) {
+      if (realtimeSession.needsName) { /* registration turn: nothing to show */ }
+      else if (activity.connectorId === undefined) sendStatus();
+      else {
+        // Words and app logo go out together: sending the words first made the
+        // logo pop in a beat later. A logo already fetched once is instant; a
+        // first-time fetch gets a short wait, and if it is slower than that the
+        // words go alone and the logo follows when it lands.
         const pixels = this.#connectorMetadataCache.resolve(activity.connectorId).then((metadata) => {
           const url = metadata?.iconUrlDark ?? metadata?.iconUrl;
           return url && isCurrent() ? resolveIconPixels(url) : null;
+        }).catch(() => null);
+        // Runs at most once: a newer status clears it before calling it, and
+        // the timer below clears it before sending.
+        this.#flushPendingActivity = () => {
+          if (this.#activeRealtimeSession === realtimeSession) sendStatus();
+        };
+        const late = Symbol('late');
+        void Promise.race([
+          pixels,
+          new Promise<typeof late>((resolve) => setTimeout(resolve, ACTIVITY_ICON_WAIT_MILLISECONDS, late)),
+        ]).then((first) => {
+          if (!isCurrent()) return;
+          this.#flushPendingActivity = null;
+          if (first !== late) { sendStatus(first ?? undefined); return; }
+          sendStatus();
+          void forwardActivityIcon(pixels, isCurrent, sendStatus);
         });
-        void forwardActivityIcon(pixels, isCurrent, (iconPixels) => realtimeSession.onTranscript({
-          type: 'realtime_status', requestId: realtimeSession.requestId,
-          caption: activity.caption, iconPixels,
-        }));
       }
     }
     if (method === 'thread/realtime/sdp') {
@@ -2143,6 +2166,15 @@ export class CodexAppServerClient {
       });
   }
 
+  // Sends a caption still waiting for its logo now, alone (a quick tool can
+  // finish inside the wait; dropping it would skip the caption entirely), and
+  // makes any logo or caption still in flight stale.
+  #supersedeActivity(): number {
+    const flush = this.#flushPendingActivity;
+    this.#flushPendingActivity = null;
+    flush?.();
+    return ++this.#activityGeneration;
+  }
   #answerServerRequest(id: string | number, method: string, rawParams: unknown): void {
     if (method === 'currentTime/read') {
       this.#send({ id, result: { currentTimeAt: Math.floor(Date.now() / 1000) } });
@@ -2157,6 +2189,9 @@ export class CodexAppServerClient {
       this.#desktopConversationBridge.publish(threadId);
       const session = this.#activeRealtimeSession;
       if (session?.threadId === threadId) {
+        // Without this a tool caption still waiting for its logo would land
+        // after this prompt and cover it while the tool is blocked on it.
+        this.#supersedeActivity();
         session.onTranscript({ type: 'realtime_status', requestId: session.requestId,
           caption: 'Answer in Codex', icon: 'none' });
         void this.#request('thread/realtime/appendText', { threadId, role: 'developer',
