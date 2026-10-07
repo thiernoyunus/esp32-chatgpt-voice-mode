@@ -49,9 +49,23 @@ constexpr int kPanelWidth = 410, kPanelHeight = 502;
 constexpr int kOrbSize = 256;
 // Dead centre of the panel, so the character is not floating in the top half.
 constexpr int kOrbTop = (kPanelHeight - kOrbSize) / 2;
-constexpr int kNavSize = 48, kNavTop = 36, kNavSide = 24;
+// Sized for a fingertip on the wrist: the old 48/56 were hard to hit. All
+// four are one size; both pairs still clear the panel's rounded corners, and
+// the bottom pair ends above the transcript strip (which starts at y=440).
+constexpr int kNavSize = 80, kNavTop = 28, kNavSide = 20;
 // Below the character, above the transcript strip along the very bottom.
-constexpr int kButtonSize = 56, kButtonTop = 376, kButtonSide = 52;
+constexpr int kButtonSize = 80, kButtonTop = 352, kButtonSide = 20;
+// Glyphs inside them grow with the discs (the fonts/images are fixed size).
+constexpr int kGlyph = 40;
+static_assert(kButtonTop + kButtonSize <= kPanelHeight - 28 - 34);
+// The status words ("Thinking", "Searching emails") sit right above the
+// character, below the top buttons, where they get nearly the whole width
+// instead of the gap between the buttons. The character is nudged down to
+// make room; it still ends above the transcript strip.
+constexpr int kCaptionTop = kNavTop + kNavSize + 4;
+constexpr int kOrbShift = 25;
+static_assert(kOrbTop + kOrbShift >= kCaptionTop + 34);
+static_assert(kOrbTop + kOrbShift + kOrbSize <= kPanelHeight - 28 - 34);
 }  // namespace amoled_voice
 
 // Start in the bottom 40px and move upward at least 50px.

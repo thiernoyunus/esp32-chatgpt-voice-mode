@@ -32,6 +32,8 @@ const CODEX_APP_SERVER_REALTIME_TIMEOUT_MILLISECONDS = 40_000;
 // Recent-chat picker size: the watch shows a short scrollable list, not a
 // full history browser.
 const RECENT_CHAT_LIST_SIZE = 20;
+// How long a tool caption waits for its app logo before going out alone.
+const ACTIVITY_ICON_WAIT_MILLISECONDS = 800;
 
 /**
  * Settings handed to the Codex app-server at startup.
@@ -1550,21 +1552,34 @@ export class CodexAppServerClient {
         this.#activityGeneration === generation;
       // A new chat's registration turn is not a user request. Keep its
       // Thinking/Answering events off the watch until the first user sentence.
-      if (!realtimeSession.needsName) realtimeSession.onTranscript({
+      const sendStatus = (iconPixels?: string) => realtimeSession.onTranscript({
         type: 'realtime_status',
         requestId: realtimeSession.requestId,
         caption: activity.caption,
         icon: activity.icon,
+        ...(iconPixels !== undefined ? { iconPixels } : {}),
       });
-      if (!realtimeSession.needsName && activity.connectorId !== undefined) {
+      if (realtimeSession.needsName) { /* registration turn: nothing to show */ }
+      else if (activity.connectorId === undefined) sendStatus();
+      else {
+        // Words and app logo go out together: sending the words first made the
+        // logo pop in a beat later. A logo already fetched once is instant; a
+        // first-time fetch gets a short wait, and if it is slower than that the
+        // words go alone and the logo follows when it lands.
         const pixels = this.#connectorMetadataCache.resolve(activity.connectorId).then((metadata) => {
           const url = metadata?.iconUrlDark ?? metadata?.iconUrl;
           return url && isCurrent() ? resolveIconPixels(url) : null;
+        }).catch(() => null);
+        const late = Symbol('late');
+        void Promise.race([
+          pixels,
+          new Promise<typeof late>((resolve) => setTimeout(resolve, ACTIVITY_ICON_WAIT_MILLISECONDS, late)),
+        ]).then((first) => {
+          if (!isCurrent()) return;
+          if (first !== late) { sendStatus(first ?? undefined); return; }
+          sendStatus();
+          void forwardActivityIcon(pixels, isCurrent, sendStatus);
         });
-        void forwardActivityIcon(pixels, isCurrent, (iconPixels) => realtimeSession.onTranscript({
-          type: 'realtime_status', requestId: realtimeSession.requestId,
-          caption: activity.caption, iconPixels,
-        }));
       }
     }
     if (method === 'thread/realtime/sdp') {

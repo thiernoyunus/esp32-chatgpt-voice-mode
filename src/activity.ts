@@ -39,10 +39,25 @@ function humanizeToolAction(raw: string): string {
   const words = action.replaceAll(/[_-]+/g, ' ').trim();
   if (words === '') return 'Using a tool…';
   const trimmed = words.replace(/\bids?$/i, '').trim() || words;
+  // 'search emails' reads as an order; 'Searching emails' says what is happening.
+  const [verb = '', ...rest] = trimmed.split(' ');
+  const ing = GENERIC_TOOL_ACTION_MAP.get(verb.toLowerCase());
+  if (ing !== undefined && rest.length > 0) return `${ing} ${rest.join(' ')}`;
   return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
 }
 
-function resolveGenericToolCaption(toolName: string | undefined): string {
+// Some servers expose one catch-all tool (computer use and the browser both
+// run everything through a tool literally named 'js'), so the tool name says
+// nothing - the server is what tells the wearer what is happening.
+const SERVER_CAPTION_MAP: ReadonlyMap<string, string> = new Map([
+  ['cua_repl', 'Using the computer'],
+  ['computer-use', 'Using the computer'],
+  ['node_repl', 'Using the browser'],
+]);
+
+function resolveGenericToolCaption(server: string | undefined, toolName: string | undefined): string {
+  const byServer = SERVER_CAPTION_MAP.get(server ?? '');
+  if (byServer !== undefined) return byServer;
   if (toolName === undefined) return 'Using a tool…';
   return humanizeToolAction(toolName);
 }
@@ -71,6 +86,8 @@ export function readRealtimeActivity(method: string, params: unknown): RealtimeA
   if (method !== 'item/started') return { threadId, caption: 'Thinking…' };
   if (item?.type === 'agentMessage') return { threadId, caption: 'Answering…' };
   if (item?.type === 'webSearch') return { threadId, caption: 'Searching the web', icon: 'search' };
+  if (item?.type === 'commandExecution') return { threadId, caption: 'Running a command' };
+  if (item?.type === 'fileChange') return { threadId, caption: 'Editing files' };
   if (item?.type === 'mcpToolCall') {
     const connectorId = item.appContext?.connectorId;
     const actionName = item.appContext?.actionName;
@@ -81,7 +98,7 @@ export function readRealtimeActivity(method: string, params: unknown): RealtimeA
         ...(connectorId !== undefined ? { connectorId } : {}),
       };
     }
-    return { threadId, caption: resolveGenericToolCaption(item.tool), ...(connectorId !== undefined ? { connectorId } : {}) };
+    return { threadId, caption: resolveGenericToolCaption(item.server, item.tool), ...(connectorId !== undefined ? { connectorId } : {}) };
   }
   return { threadId, caption: 'Thinking…' };
 }
