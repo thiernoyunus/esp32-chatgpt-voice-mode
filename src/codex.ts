@@ -1601,13 +1601,7 @@ export class CodexAppServerClient {
       // offer should open a new chat rather than extend this one.
       realtimeSession.liveSessionSeen = true;
       this.#lastFailedSession = null;
-      // A caption still waiting for its logo goes out now, alone: a quick
-      // tool can finish inside the wait, and dropping it would skip the
-      // caption entirely instead of just its logo.
-      const flush = this.#flushPendingActivity;
-      this.#flushPendingActivity = null;
-      flush?.();
-      const generation = ++this.#activityGeneration;
+      const generation = this.#supersedeActivity();
       const isCurrent = () => this.#activeRealtimeSession === realtimeSession &&
         this.#activityGeneration === generation;
       // A new chat's registration turn is not a user request. Keep its
@@ -2172,6 +2166,15 @@ export class CodexAppServerClient {
       });
   }
 
+  // Sends a caption still waiting for its logo now, alone (a quick tool can
+  // finish inside the wait; dropping it would skip the caption entirely), and
+  // makes any logo or caption still in flight stale.
+  #supersedeActivity(): number {
+    const flush = this.#flushPendingActivity;
+    this.#flushPendingActivity = null;
+    flush?.();
+    return ++this.#activityGeneration;
+  }
   #answerServerRequest(id: string | number, method: string, rawParams: unknown): void {
     if (method === 'currentTime/read') {
       this.#send({ id, result: { currentTimeAt: Math.floor(Date.now() / 1000) } });
@@ -2186,6 +2189,9 @@ export class CodexAppServerClient {
       this.#desktopConversationBridge.publish(threadId);
       const session = this.#activeRealtimeSession;
       if (session?.threadId === threadId) {
+        // Without this a tool caption still waiting for its logo would land
+        // after this prompt and cover it while the tool is blocked on it.
+        this.#supersedeActivity();
         session.onTranscript({ type: 'realtime_status', requestId: session.requestId,
           caption: 'Answer in Codex', icon: 'none' });
         void this.#request('thread/realtime/appendText', { threadId, role: 'developer',
