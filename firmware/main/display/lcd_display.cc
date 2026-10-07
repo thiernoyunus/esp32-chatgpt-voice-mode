@@ -60,7 +60,11 @@ static_assert(voice_character::kShapeCount == static_cast<int>(SHAPE_COUNT),
 // 360px screen - "CHECKING CALENDAR" exactly, and anything longer is cut.
 constexpr int kVoiceCaptionTop = 42;
 constexpr int kVoiceToolIconSize = 20;
+// The AMOLED's caption is 30px text, so its connector logo grows to match.
+static int ToolIconSize(int width) { return width > 360 ? 28 : kVoiceToolIconSize; }
 constexpr size_t kVoiceToolMaxChars = 17;
+// The AMOLED's caption row is nearly the full width, so it can say more.
+constexpr size_t kVoiceToolMaxCharsWide = 30;
 // How long a named tool keeps the slot before a plain "Thinking" may take it.
 // The server announces a tool when the call STARTS and says "Thinking" again
 // the moment it finishes, so a quick lookup would otherwise flash past unread
@@ -731,7 +735,7 @@ void LcdDisplay::SetupUI() {
     voice_orb_size_ = wide ? voice_geometry::amoled_voice::kOrbSize
                            : voice_geometry::kOrbSize;
     lv_obj_set_size(emoji_box_, voice_orb_size_, voice_orb_size_);
-    lv_obj_align(emoji_box_, LV_ALIGN_CENTER, 0, wide ? 0 : 4);
+    lv_obj_align(emoji_box_, LV_ALIGN_CENTER, 0, wide ? voice_geometry::amoled_voice::kOrbShift : 4);
     lv_obj_set_style_radius(emoji_box_, 0, 0);
     lv_obj_set_style_clip_corner(emoji_box_, false, 0);
     lv_obj_set_style_bg_opa(emoji_box_, LV_OPA_TRANSP, 0);
@@ -811,6 +815,13 @@ void LcdDisplay::SetupUI() {
         lv_obj_set_style_text_color(icon, lv_color_white(), 0);
         lv_label_set_text(icon, index == 0 ? MATERIAL_SYMBOLS_MIC : MATERIAL_SYMBOLS_CLOSE);
         lv_obj_center(icon);
+        if (wide) {
+            // The icon font stops at 30px; scale the glyph up with its disc.
+            lv_obj_set_style_transform_pivot_x(icon, LV_PCT(50), 0);
+            lv_obj_set_style_transform_pivot_y(icon, LV_PCT(50), 0);
+            lv_obj_set_style_transform_scale(icon,
+                256 * voice_geometry::amoled_voice::kGlyph / 30, 0);
+        }
         lv_obj_add_event_cb(button, [](lv_event_t* e) {
             auto display = static_cast<LcdDisplay*>(lv_event_get_user_data(e));
             auto action = lv_event_get_target(e) == display->voice_mute_button_
@@ -862,6 +873,11 @@ void LcdDisplay::SetupUI() {
         lv_image_set_src(icon, i == 0 ? &watch_icons::back : &watch_icons::more);
         lv_obj_set_style_image_recolor(icon, lv_color_white(), 0);
         lv_obj_set_style_image_recolor_opa(icon, LV_OPA_COVER, 0);
+        if (wide) {
+            lv_image_set_scale(icon, 256 * voice_geometry::amoled_voice::kGlyph / 24);
+            lv_obj_set_size(icon, voice_geometry::amoled_voice::kGlyph,
+                            voice_geometry::amoled_voice::kGlyph);
+        }
         lv_obj_center(icon);
         // They are told apart by pointer: the old check read the button's x
         // position, which the AMOLED layout no longer shares with the round
@@ -1118,9 +1134,10 @@ void LcdDisplay::UpdateVoiceToolCaption(const char* activity) {
 
     /* The dot-matrix font is A-Z, digits and punctuation - it folds lowercase
      * itself and draws anything else as a space. */
-    char text[kVoiceToolMaxChars + 1];
+    char text[kVoiceToolMaxCharsWide + 1];
+    const size_t max_chars = width_ > 360 ? kVoiceToolMaxCharsWide : kVoiceToolMaxChars;
     size_t n = 0;
-    for (const char* c = activity; *c != '\0' && n < kVoiceToolMaxChars; ++c) {
+    for (const char* c = activity; *c != '\0' && n < max_chars; ++c) {
         if (static_cast<unsigned char>(*c) < 0x80) text[n++] = *c;
     }
     while (n > 0 && text[n - 1] == ' ') --n;
@@ -1128,21 +1145,25 @@ void LcdDisplay::UpdateVoiceToolCaption(const char* activity) {
     if (n == 0) return;
 
     if (width_ > 360) {
+        /* Same 30px face as the THINKING word it replaces, in the same row
+         * above the character, where it has nearly the full width. */
+        using namespace voice_geometry::amoled_voice;
+        const int icon_w = ToolIconSize(width_);
+        const int gap = 6;
+        const int room = width_ - 40 - icon_w - gap;
         voice_tool_text_ = lv_label_create(voice_root_);
         lv_label_set_text(voice_tool_text_, text);
-        lv_obj_set_style_text_font(voice_tool_text_, &font_noto_sans_basic_20_4, 0);
+        lv_obj_set_style_text_font(voice_tool_text_, &font_noto_sans_basic_30_4, 0);
         lv_obj_set_style_text_color(voice_tool_text_, lv_color_hex(kVoiceAmber), 0);
         lv_obj_update_layout(voice_tool_text_);
-        const int icon_w = kVoiceToolIconSize;
-        const int gap = 8;
-        const int text_w = std::min(static_cast<int>(lv_obj_get_width(voice_tool_text_)), width_ - 60);
-        // Centred on the panel, not on the round watch's old 180.
+        const int text_w = std::min(static_cast<int>(lv_obj_get_width(voice_tool_text_)), room);
         const int left = width_ / 2 - (icon_w + gap + text_w) / 2;
+        const int line_h = font_noto_sans_basic_30_4.line_height;
         lv_obj_set_width(voice_tool_text_, text_w);
         lv_label_set_long_mode(voice_tool_text_, LV_LABEL_LONG_DOT);
-        lv_obj_set_pos(voice_tool_text_, left + icon_w + gap, kVoiceCaptionTop);
+        lv_obj_set_pos(voice_tool_text_, left + icon_w + gap, kCaptionTop);
         if (voice_tool_icon_ != nullptr) {
-            lv_obj_set_pos(voice_tool_icon_, left, kVoiceCaptionTop);
+            lv_obj_set_pos(voice_tool_icon_, left, kCaptionTop + (line_h - icon_w) / 2);
             lv_obj_move_foreground(voice_tool_icon_);
         }
         return;
@@ -1173,13 +1194,13 @@ void LcdDisplay::UpdateVoiceStateCaption(const char* text, uint32_t color) {
     if (width_ > 360) {
         voice_state_caption_ = lv_label_create(voice_root_);
         lv_label_set_text(voice_state_caption_, text);
-        lv_obj_set_width(voice_state_caption_, 340);
+        lv_obj_set_width(voice_state_caption_, width_ - 40);
         lv_label_set_long_mode(voice_state_caption_, LV_LABEL_LONG_DOT);
         lv_obj_set_style_text_font(voice_state_caption_, &font_noto_sans_basic_30_4, 0);
         lv_obj_set_style_text_align(voice_state_caption_, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_set_style_text_color(voice_state_caption_,
             lv_color_hex(color == kVoiceGray ? 0xF4F1FF : color), 0);
-        lv_obj_set_pos(voice_state_caption_, (width_ - 340) / 2, 42);
+        lv_obj_set_pos(voice_state_caption_, 20, voice_geometry::amoled_voice::kCaptionTop);
         voice_state_caption_text_ = text;
         voice_state_caption_color_ = color;
         if (voice_tool_active_) lv_obj_add_flag(voice_state_caption_, LV_OBJ_FLAG_HIDDEN);
@@ -1277,8 +1298,8 @@ void LcdDisplay::SetVoiceActivity(const char* activity, const char* icon, const 
             voice_tool_icon_ = lv_image_create(voice_root_);
             lv_image_set_src(voice_tool_icon_, voice_activity_image_->image_dsc());
             // 24px artwork into the 20px the caption line leaves for it.
-            lv_image_set_scale(voice_tool_icon_, 256 * kVoiceToolIconSize / 24);
-            lv_obj_set_size(voice_tool_icon_, kVoiceToolIconSize, kVoiceToolIconSize);
+            lv_image_set_scale(voice_tool_icon_, 256 * ToolIconSize(width_) / 24);
+            lv_obj_set_size(voice_tool_icon_, ToolIconSize(width_), ToolIconSize(width_));
         } else {
             heap_caps_free(data);
         }
@@ -1289,7 +1310,7 @@ void LcdDisplay::SetVoiceActivity(const char* activity, const char* icon, const 
         // Matches the caption beside it, and the state word it stands in for.
         lv_obj_set_style_text_color(voice_tool_icon_, lv_color_hex(kVoiceAmber), 0);
         lv_label_set_text(voice_tool_icon_, MATERIAL_SYMBOLS_SEARCH);
-        lv_obj_set_size(voice_tool_icon_, kVoiceToolIconSize, kVoiceToolIconSize);
+        lv_obj_set_size(voice_tool_icon_, ToolIconSize(width_), ToolIconSize(width_));
         lv_obj_set_style_text_align(voice_tool_icon_, LV_TEXT_ALIGN_CENTER, 0);
     }
     UpdateVoiceToolCaption(activity);
