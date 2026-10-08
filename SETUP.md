@@ -155,7 +155,9 @@ account. The device does not join Tailscale; only the Mac does. The call audio
 already goes straight from the device to OpenAI, so only the call setup travels
 this way.
 
-Share **only the device's paths**, never the whole port:
+Share **only the device's paths**, never the whole port. First run
+`tailscale serve status`: it must say `No serve config`. Funnel makes everything
+on its port public, including anything already shared privately there.
 
 ```sh
 tailscale funnel --bg --set-path /agents/voicemode/ http://127.0.0.1:8790/agents/voicemode/
@@ -163,7 +165,7 @@ tailscale funnel --bg --set-path /ota/check http://127.0.0.1:8790/ota/check
 ```
 
 Funnel delivers requests as if they came from this Mac, and the listener's
-device controls (`/control`, `/devices`) trust exactly that. Sharing the whole
+device controls (`/mcp`, `/devices`) trust exactly that. Sharing the whole
 port would open them to the internet. The device's own path still needs the
 secret.
 
@@ -178,7 +180,7 @@ CONFIG_VOICEMODE_URL="wss://your-mac.your-tailnet.ts.net"
 The device then uses that address at home too. **Check**, from outside your
 tailnet (a phone on mobile data): opening
 `https://your-mac.your-tailnet.ts.net/agents/voicemode/x?token=wrong` answers
-`Unauthorized`, and `/control` answers nothing. The public name can take a
+`Unauthorized`, and `/mcp` and `/devices` answer 404 (not found). The public name can take a
 while to appear the first time (an hour here, on the first try); do not turn
 Funnel off and on while waiting.
 
