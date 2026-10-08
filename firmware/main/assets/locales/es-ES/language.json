@@ -27,6 +27,7 @@
         "SERVER_NOT_CONNECTED": "No se puede conectar al servicio, inténtelo más tarde",
         "VOICEMODE_URL_NOT_SET": "Falta la dirección del Mac. Ejecuta la configuración en tu Mac.",
         "VOICEMODE_MAC_UNREACHABLE": "No se encuentra tu Mac. Comprueba que está encendido, sin suspender y conectado (con Tailscale activado, si lo usas).",
+        "VOICEMODE_MAC_NOT_ANSWERING": "Tu Mac está encendido, pero su programa de voz no responde. Espera un minuto y toca para reintentar; si sigue pasando, reinicia el Mac.",
         "VOICEMODE_CONTROL_DROPPED": "Tu Mac dejó de responder. Toca para intentarlo de nuevo.",
         "SERVER_TIMEOUT": "Tiempo de espera agotado",
         "SERVER_ERROR": "Error de envío, verifique la red",

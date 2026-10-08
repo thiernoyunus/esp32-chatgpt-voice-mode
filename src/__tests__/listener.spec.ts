@@ -29,6 +29,12 @@ it('refreshes the chat picker independently of a voice call, including clearing 
   expect(planDeviceMessage(JSON.stringify({ type: 'chat_list_request', requestId: '' })).kind).toBe('drop');
 });
 
+it('answers the watch Status page with whether the Codex app is reachable', () => {
+  expect(planDeviceMessage(JSON.stringify({ type: 'status_request' }))).toEqual({ kind: 'status_request' });
+  expect(JSON.parse(encodeServerToDeviceMessage({ type: 'status', codexApp: false })))
+    .toEqual({ type: 'status', codexApp: false });
+});
+
 const OFFER = JSON.stringify({
   type: 'realtime_offer',
   requestId: 'call-1',

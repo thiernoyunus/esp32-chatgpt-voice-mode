@@ -141,6 +141,7 @@ public:
     void FeedTouch(bool pressed, int x, int y) override;
     void ShowVoicePage() override;
     void HoldCallError() override;
+    void ReleaseCallError() override;
     void UpdateWatchInfo(const WatchUi::Info& info);
     void UpdateStatusBar(bool update_all = false) override;
     void ShowConfirmScreen(const char* summary) override;

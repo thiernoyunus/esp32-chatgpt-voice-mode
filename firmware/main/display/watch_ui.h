@@ -12,11 +12,11 @@ public:
     static constexpr int kThemeCount = watch_palette::kThemeCount;
     enum class Page { Home, Voice, Settings, Brightness, Volume, Wifi, Clock, About,
                       CodexSettings, Models, Keyboard, WifiSetup, Sleep, Reasoning,
-                      Chats, Voices, Shapes, Colours, Themes, Mascots };
+                      Chats, Voices, Shapes, Colours, Themes, Mascots, Status };
     enum class Action { Refresh, OpenVoice, Mute, EndCall, Brightness, Volume,
                         ScanWifi, JoinWifi, SetupWifi, Models, SelectModel, Sleep, SelectReasoning,
                         SelectChat, TemporaryChat, SelectVoice, SelectShape, SelectColour, SelectMascot, Captions,
-                        SelectTheme };
+                        SelectTheme, CheckStatus };
     struct Info {
         int brightness = 75, volume = 65, battery = -1;
         // Seconds until the display sleeps. 0 means always on.
@@ -40,6 +40,10 @@ public:
         // Which mascot is worn (mascot::kMascots), or -1 when no mascot pictures
         // are on the watch: then the blob's Shape and Colour are offered instead.
         int mascot = -1;
+        // For the Status page. mac: 0 checking, 1 connected, 2 not found,
+        // 3 found but its voice program is not answering. codex_app: whether
+        // calls can reach the Codex app's projects; -1 not known yet.
+        int mac = 0, codex_app = -1;
         std::vector<std::string> networks, saved_networks, models, chats, chat_folders;
     };
     using Callback = std::function<void(Action, int, const std::string&, const std::string&)>;

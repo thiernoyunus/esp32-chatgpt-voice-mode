@@ -121,6 +121,7 @@ export function repairDeviceOffer(sdp: string): string {
 export type DeviceMessagePlan =
   | { readonly kind: 'voice_offer'; readonly offer: z.infer<typeof realtimeOfferSchema> }
   | { readonly kind: 'chat_list'; readonly requestId: string }
+  | { readonly kind: 'status_request' }
   | { readonly kind: 'voice_stop'; readonly requestId: string }
   | { readonly kind: 'tool_reply'; readonly reply: DeviceMcpReply }
   | { readonly kind: 'drop'; readonly reason: string };
@@ -159,6 +160,7 @@ export function planDeviceMessage(rawText: string): DeviceMessagePlan {
   if (typeof type !== 'string') {
     return { kind: 'drop', reason: 'no type field' };
   }
+  if (type === 'status_request') return { kind: 'status_request' };
   if (type === 'hello') {
     // The device announces itself on connect. We already know who it is from
     // the URL it dialled, so there is nothing to do with this.
@@ -622,6 +624,12 @@ export async function runListener(
         if (plan.kind === 'tool_reply') {
           const send = controlConnections.get(socket);
           if (send !== undefined) deviceTools.acceptReply(socket.data.deviceId, send, plan.reply);
+          return;
+        }
+        if (plan.kind === 'status_request') {
+          void desktopHostAnswers().catch(() => false).then(codexApp => {
+            sendToDevice(socket, encodeServerToDeviceMessage({ type: 'status', codexApp }));
+          });
           return;
         }
         if (plan.kind === 'chat_list') {

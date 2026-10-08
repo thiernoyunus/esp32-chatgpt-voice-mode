@@ -31,6 +31,7 @@
         "SERVER_NOT_CONNECTED": "Unable to connect to service, please try again later",
         "VOICEMODE_URL_NOT_SET": "Mac address missing. Run setup on your Mac.",
         "VOICEMODE_MAC_UNREACHABLE": "Can't find your Mac. Make sure it's on, not sleeping, and online (with Tailscale on, if you use it).",
+        "VOICEMODE_MAC_NOT_ANSWERING": "Your Mac is on, but its voice program isn't answering. Wait a minute and tap to retry; if it keeps happening, restart the Mac.",
         "VOICEMODE_CONTROL_DROPPED": "Your Mac stopped answering. Tap to try again.",
         "SERVER_TIMEOUT": "Waiting for response timeout",
         "SERVER_ERROR": "Sending failed, please check the network",

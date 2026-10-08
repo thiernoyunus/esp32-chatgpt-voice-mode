@@ -34,7 +34,13 @@
 static constexpr int kScreenSleepAfterSeconds = 60;
 // Slow enough that a server that keeps hanging up does not turn into a
 // reconnect loop, quick enough that the channel is ready when a hand arrives.
-static constexpr int kChannelReopenIntervalSeconds = 10;
+// While the line to the Mac is down, how long to wait between tries: quick
+// at first, then less often. Only while the screen is on - asleep, nobody is
+// looking, and a Mac asleep overnight would otherwise cost thousands of tries.
+// A tap to call always tries at once. ponytail: fixed steps; tune if needed.
+static int ChannelReopenIntervalSeconds(int down_seconds) {
+    return down_seconds < 60 ? 10 : down_seconds < 300 ? 30 : 120;
+}
 // Draining the encoder after the finger lifts: a few short waits rather than one
 // long one, so a quiet tail costs nothing but a real one still gets through.
 static constexpr int kListenFlushAttempts = 6;
@@ -287,6 +293,9 @@ void Application::Run() {
                 Alert(Lang::Strings::ERROR, last_error_message_.c_str(), "cancel",
                       Lang::Sounds::OGG_EXCLAMATION);
                 Board::GetInstance().GetDisplay()->HoldCallError();
+                if (auto voice = dynamic_cast<CodexVoiceProtocol*>(protocol_.get())) {
+                    held_error_connects_ = voice->ConnectCount();
+                }
             }
         }
 
@@ -383,17 +392,28 @@ void Application::Run() {
             }
 
 #ifdef CONFIG_VOICEMODE_PROTOCOL
+            channel_ticks_++;  // never reset, unlike clock_ticks_ (state changes)
             if (GetDeviceState() == kDeviceStateIdle) {
                 idle_seconds_++;
                 if (screen_sleep_seconds_ > 0 && idle_seconds_ >= screen_sleep_seconds_) {
                     SleepScreen();
                 }
                 auto* voice = static_cast<CodexVoiceProtocol*>(protocol_.get());
-                if (voice != nullptr && !voice->IsControlConnected() &&
+                // A failure held on screen goes away once the watch has
+                // reconnected to the Mac since: tapping would work now.
+                if (voice != nullptr && held_error_connects_ >= 0 &&
+                    voice->ConnectCount() > static_cast<uint32_t>(held_error_connects_)) {
+                    held_error_connects_ = -1;
+                    Board::GetInstance().GetDisplay()->ReleaseCallError();
+                }
+                if (voice != nullptr && voice->IsControlConnected()) channel_down_since_ticks_ = -1;
+                else if (channel_down_since_ticks_ < 0) channel_down_since_ticks_ = channel_ticks_;
+                if (voice != nullptr && !voice->IsControlConnected() && !is_screen_asleep_ &&
                     Board::GetInstance().IsWifiConnected() &&
-                    clock_ticks_ - last_channel_attempt_ticks_ >= kChannelReopenIntervalSeconds &&
+                    channel_ticks_ - last_channel_attempt_ticks_ >=
+                        ChannelReopenIntervalSeconds(channel_ticks_ - channel_down_since_ticks_) &&
                     !channel_reconnect_running_.exchange(true)) {
-                    last_channel_attempt_ticks_ = clock_ticks_;
+                    last_channel_attempt_ticks_ = channel_ticks_;
                     if (xTaskCreate([](void* arg) {
                             auto* app = static_cast<Application*>(arg);
                             auto* protocol = static_cast<CodexVoiceProtocol*>(app->protocol_.get());
@@ -1128,6 +1148,10 @@ void Application::NoteUserActivity() {
     }
     is_screen_asleep_ = false;
     ESP_LOGI(TAG, "Screen awake");
+    // Someone is looking: if the Mac is unreachable, try again now and
+    // quickly for a while, so Status catches up within seconds.
+    last_channel_attempt_ticks_ = -1000;
+    channel_down_since_ticks_ = -1;
 
     auto& board = Board::GetInstance();
     board.GetDisplay()->SetPowerSaveMode(false);
@@ -1815,6 +1839,8 @@ void Application::RefreshWatchInfo() {
             info.models.push_back(model.name);
             if (model.id == selected) info.model = model.name;
         }
+        info.mac = static_cast<int>(voice->GetMacState());  // same order as WatchUi::Info::mac
+        info.codex_app = voice->CodexAppOpen();
         const std::string selected_chat = settings.GetString("chat", "");
         for (const auto& chat : voice->GetChats()) {
             info.chats.push_back(chat.name);
@@ -1891,6 +1917,9 @@ void Application::OnWatchAction(WatchUi::Action action, int value,
                 if (auto voice = dynamic_cast<CodexVoiceProtocol*>(protocol_.get())) {
                     if (!voice->RefreshChats()) pending_watch_notification_ = "Connect to the Mac to refresh chats";
                 }
+                break;
+            case WatchUi::Action::CheckStatus:
+                if (auto voice = dynamic_cast<CodexVoiceProtocol*>(protocol_.get())) voice->RequestStatus();
                 break;
             case WatchUi::Action::SelectModel:
                 if (auto voice = dynamic_cast<CodexVoiceProtocol*>(protocol_.get())) {

@@ -18,6 +18,17 @@ namespace {
 constexpr uint32_t kAccent = 0x10A37F;
 constexpr uint32_t kAmoledText = 0xF4F1FF;
 constexpr uint32_t kAmoledMuted = 0xA9B8C5;
+
+// The first thing standing between the person and a working call, in their
+// words, with what to do about it. summary is nullptr when nothing is wrong.
+struct StatusProblem { const char* summary; const char* advice; };
+StatusProblem FirstProblem(const WatchUi::Info& i) {
+    if (!i.connected) return {"No Wi-Fi", "Connect the watch to Wi-Fi: Settings, then Wi-Fi."};
+    if (i.mac == 2) return {"Mac not found", "Make sure your Mac is on, not sleeping, and online, with Tailscale on if you use it."};
+    if (i.mac == 3) return {"Mac not answering", "Your Mac is on, but its voice program isn't answering. Wait a minute; if it lasts, restart the Mac."};
+    if (i.mac == 1 && i.codex_app == 0) return {"No projects", "Calls work, but can't see your projects. Open the Codex app on your Mac."};
+    return {nullptr, nullptr};
+}
 using watch_palette::kUiPalettes;
 using watch_palette::Palette;
 // The round screen's geometry, shared with the design mockups: centre, and the
@@ -502,6 +513,11 @@ void WatchUi::Show(Page page) {
     }
     case Page::CodexSettings:
         Header("ChatGPT",Page::Voice);Column();
+        {
+            const auto problem=FirstProblem(info_);
+            Row("Status",problem.summary?problem.summary:(info_.mac==1&&info_.codex_app==1?"All good":"Checking"),
+                [this]{Show(Page::Status);Emit(Action::CheckStatus);});
+        }
         if(info_.mascot>=0) Row("Mascot",mascot::kMascots[info_.mascot].name,[this]{Show(Page::Mascots);});
         else{
             Row("Shape",kShapeNames[std::clamp(info_.shape,0,voice_character::kShapeCount-1)],[this]{Show(Page::Shapes);});
@@ -516,6 +532,23 @@ void WatchUi::Show(Page page) {
             Emit(Action::Captions,info_.captions?1:0);
             Show(Page::CodexSettings);
         });break;
+    case Page::Status: {
+        Header("Status",Page::CodexSettings);Column();
+        static const char* kMac[]={"Checking","Found","Not found","Not answering"};
+        Row("Wi-Fi",info_.connected?info_.network.c_str():"Not connected",{});
+        Row("Mac",info_.connected?kMac[std::clamp(info_.mac,0,3)]:"-",{});
+        Row("Projects",info_.mac!=1?"-":info_.codex_app==1?"Available":info_.codex_app==0?"Codex app closed":"Checking",{});
+        const auto problem=FirstProblem(info_);
+        auto advice=Label(column_,problem.advice?problem.advice:
+                          info_.mac==1&&info_.codex_app==1?"Everything is working. Tap the mascot to talk.":"Checking...");
+        lv_obj_set_width(advice,full_page_?362:236);
+        lv_label_set_long_mode(advice,LV_LABEL_LONG_WRAP);
+        if(full_page_){
+            lv_obj_set_style_text_font(advice,&font_noto_sans_basic_30_4,0);
+            lv_obj_set_style_text_color(advice,lv_color_hex(problem.advice?kAmoledText:kAmoledMuted),0);
+        }
+        break;
+    }
     case Page::Mascots:
         Header("Mascot",Page::CodexSettings);Column();
         for(int i=0;i<mascot::kMascotCount;++i){
@@ -791,6 +824,8 @@ void WatchUi::SetInfo(const Info& info) {
     const bool mascot_changed=info_.mascot!=info.mascot;
     bool sleep_changed=info_.sleep_seconds!=info.sleep_seconds;
     bool notice_changed=info_.notice!=info.notice;
+    const bool status_changed=info_.mac!=info.mac||info_.codex_app!=info.codex_app||
+                              info_.connected!=info.connected||info_.network!=info.network;
     info_=info;
     if((full_page_&&theme_changed)
        ||(page_==Page::Wifi&&wifi_changed)
@@ -798,8 +833,14 @@ void WatchUi::SetInfo(const Info& info) {
        ||(page_==Page::Chats&&chats_changed)
        ||(page_==Page::Sleep&&sleep_changed)
        ||(page_==Page::Brightness&&sleep_changed)
-       ||(page_==Page::CodexSettings&&(captions_changed||mascot_changed))
-       ||(page_==Page::Mascots&&mascot_changed)) Show(page_);
+       ||(page_==Page::CodexSettings&&(captions_changed||mascot_changed||status_changed))
+       ||(page_==Page::Status&&status_changed)
+       ||(page_==Page::Mascots&&mascot_changed)){
+        // A refresh must not throw the person back to the top of what they are reading.
+        const int32_t scrolled=column_?lv_obj_get_scroll_y(column_):0;
+        Show(page_);
+        if(column_&&scrolled>0){lv_obj_update_layout(column_);lv_obj_scroll_to_y(column_,scrolled,LV_ANIM_OFF);}
+    }
     else if (notice_changed) UpdateNotice();
 }
 void WatchUi::Tick(const char* clock,const char* date){

@@ -71,6 +71,9 @@ export const serverToDeviceMessageSchema = z.discriminatedUnion('type', [
     chats: voiceChatListSchema.optional(),
   }),
   z.object({ type: z.literal('chat_list'), requestId: z.string().min(1).max(64), chats: voiceChatListSchema }),
+  // Answer to the watch's Status page: whether calls can reach the Codex
+  // app's project tools right now (the app is open and its helper answers).
+  z.object({ type: z.literal('status'), codexApp: z.boolean() }),
   z.object({
     type: z.literal('realtime_transcript_delta'),
     requestId: z.string().min(1),

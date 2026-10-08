@@ -190,9 +190,13 @@ private:
     // Set once a failed call has been retried by itself; cleared when a call
     // connects or the failure is shown.
     std::atomic<bool> retried_call_{false};
+    // ConnectCount() when a call failure was put on hold; -1 when none is.
+    int64_t held_error_connects_ = -1;
     int screen_sleep_seconds_ = 60;
     std::string pending_watch_notification_;
     int last_channel_attempt_ticks_ = -1000;  // Rate-limits idle channel reopening
+    int channel_down_since_ticks_ = -1;  // When the line to the Mac went down; -1 while up
+    int channel_ticks_ = 0;  // Seconds since boot, for the two above
     std::atomic<bool> channel_reconnect_running_{false};
     int clock_ticks_ = 0;
     int last_telemetry_ticks_ = 0;
