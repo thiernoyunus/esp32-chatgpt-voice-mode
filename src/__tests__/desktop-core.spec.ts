@@ -46,6 +46,27 @@ test('desktop owns the core, preserves its messages, and rejects invalid startup
   } finally { child?.kill(); host.close(); rmSync(directory, { recursive: true, force: true }); }
 });
 
+test('a host told to stop keeps a running call and refuses new ones', async () => {
+  const directory = mkdtempSync('/tmp/esp-core-check-');
+  const executable = join(directory, 'fake-core');
+  writeFileSync(executable, '#!/bin/sh\nexec cat\n');
+  chmodSync(executable, 0o700);
+  const host = await startDesktopCoreHost(executable, directory);
+  const call = new DesktopCodexProcess(directory, [], directory);
+  try {
+    const lines = createInterface({ input: call.stdout });
+    const echo = (text: string) => new Promise<string>((resolve) => {
+      lines.once('line', resolve);
+      call.stdin.write(`${text}\n`);
+    });
+    expect(await echo('before')).toBe('before');
+    host.drain();
+    expect(await echo('after')).toBe('after');
+    expect(await desktopHostAnswers(directory)).toBe(false);
+    lines.close();
+  } finally { call.kill(); host.close(); rmSync(directory, { recursive: true, force: true }); }
+});
+
 test('the desktop host file loads under Codex desktop node, which cannot resolve extensionless local imports', () => {
   const source = readFileSync(new URL('../desktop-core.ts', import.meta.url), 'utf8');
   expect(source).not.toMatch(/from '\.\.?\//);

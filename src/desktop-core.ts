@@ -158,11 +158,13 @@ export async function startDesktopCoreHost(executable: string, directory = deskt
   });
   await new Promise<void>((resolveListen, reject) => { server.once('error', reject); server.listen(path, resolveListen); });
   chmodSync(path, 0o600);
-  let closed = false;
-  return { path, close() {
-    if (closed) return;
-    closed = true;
+  return { path, clients, close() {
     for (const socket of clients) socket.destroy();
+    this.drain();
+  }, drain() {
+    // Codex desktop runs a copy of this host per chat and stops it when that
+    // chat closes - often mid-call, since a call opens its own chat. Take no
+    // new calls, but let running ones finish; the process exits after them.
     server.close();
     rmSync(path, { force: true });
   } };
@@ -177,7 +179,13 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const host = await startDesktopCoreHost(executable);
   const mcp = new Server({ name: DESKTOP_CORE_HOST_NAME, version: '1.0.0' }, { capabilities: { tools: {} } });
   mcp.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [] }));
-  const close = () => { host.close(); void mcp.close(); };
+  const close = () => {
+    host.drain();
+    void mcp.close();
+    const exitWhenIdle = () => { if (host.clients.size === 0) process.exit(0); };
+    exitWhenIdle();
+    for (const socket of host.clients) socket.on('close', exitWhenIdle);
+  };
   process.stdin.once('end', close);
   process.stdin.once('close', close);
   process.once('SIGTERM', close);
