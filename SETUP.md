@@ -146,6 +146,48 @@ credentials with it, so rebuilding is usually less trouble. What neither fix
 does is let the device find a Mac that quietly changed address: the device
 always dials what it was told.
 
+### Or reach it from anywhere
+
+A home address only works on home wifi. To use the device away from home (a
+phone hotspot, a café), give the Mac a fixed public address with
+[Tailscale Funnel](https://tailscale.com/kb/1223/funnel), free on a personal
+account. The device does not join Tailscale; only the Mac does. The call audio
+already goes straight from the device to OpenAI, so only the call setup travels
+this way.
+
+Share **only the device's paths**, never the whole port. First run
+`tailscale serve status`: it must say `No serve config`. Funnel makes everything
+on its port public, including anything already shared privately there.
+
+```sh
+tailscale funnel --bg --set-path /agents/voicemode/ http://127.0.0.1:8790/agents/voicemode/
+tailscale funnel --bg --set-path /ota/check http://127.0.0.1:8790/ota/check
+```
+
+Funnel delivers requests as if they came from this Mac, and the listener's
+device controls (`/mcp`, `/devices`) trust exactly that. Sharing the whole
+port would open them to the internet. The device's own path still needs the
+secret.
+
+`tailscale funnel status` prints the address, for example
+`https://your-mac.your-tailnet.ts.net`. Use it in step 2 with `wss://` in place
+of `https://`:
+
+```
+CONFIG_VOICEMODE_URL="wss://your-mac.your-tailnet.ts.net"
+```
+
+The device then uses that address at home too. **Check**, from outside your
+tailnet (a phone on mobile data): opening
+`https://your-mac.your-tailnet.ts.net/agents/voicemode/x?token=wrong` answers
+`Unauthorized`, and `/mcp` and `/devices` answer 404 (not found). The public name can take a
+while to appear the first time (an hour here, on the first try); do not turn
+Funnel off and on while waiting.
+
+The Mac must stay awake, online and signed in to Tailscale. The listener's log
+still says `connected on the local network` for these connections. To stop
+sharing: `tailscale funnel --https=443 off`.
+
 ## 2. The device half
 
 ```sh
@@ -200,8 +242,9 @@ From the watch's Home screen, open **Settings → Wi-Fi** to scan nearby network
 Tap one, enter its password on the watch, and join. Saved networks can be
 selected again without retyping. **Phone setup** remains available on that
 page when typing a long password on the watch is inconvenient. The Mac and
-watch must be able to reach each other on the same local network; the watch's
-temporary setup hotspot is only for entering the Wi-Fi details.
+watch must be on the same local network, unless the watch dials the Mac's
+public address ([Or reach it from anywhere](#or-reach-it-from-anywhere)); the
+watch's temporary setup hotspot is only for entering the Wi-Fi details.
 
 **Check:** the Mac's log prints `Device "watch" connected on the local network.`
 
