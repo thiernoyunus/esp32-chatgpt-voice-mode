@@ -30,7 +30,7 @@
         "SERVER_NOT_FOUND": "Looking for available service",
         "SERVER_NOT_CONNECTED": "Unable to connect to service, please try again later",
         "VOICEMODE_URL_NOT_SET": "Mac address missing. Run setup on your Mac.",
-        "VOICEMODE_MAC_UNREACHABLE": "Could not reach the Mac. Check that it is on the same wifi and that the listener is running.",
+        "VOICEMODE_MAC_UNREACHABLE": "Can't reach your Mac. Check that it is awake and online, then tap to retry.",
         "VOICEMODE_CONTROL_DROPPED": "Mac stopped responding after connecting. Check the listener log and try again.",
         "SERVER_TIMEOUT": "Waiting for response timeout",
         "SERVER_ERROR": "Sending failed, please check the network",

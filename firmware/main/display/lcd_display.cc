@@ -968,6 +968,8 @@ void LcdDisplay::SetChatMessage(const char* role, const char* content) {
         }
         return;
     }
+    // Clearing is what a call ending does; a held error outlives that.
+    if (error_held_ && (content == nullptr || content[0] == '\0')) return;
     lv_anim_delete(chat_message_label_, nullptr);
     lv_label_set_text(chat_message_label_, content);
     /* One line carries both halves of the conversation, so they have to be
@@ -987,6 +989,7 @@ void LcdDisplay::SetChatMessage(const char* role, const char* content) {
 
 void LcdDisplay::ClearChatMessages() {
     DisplayLockGuard lock(this);
+    if (error_held_) return;
     // In non-wechat mode, just clear the chat message label and hide the bar
     if (chat_message_label_ != nullptr) {
         lv_label_set_text(chat_message_label_, "");
@@ -1358,11 +1361,14 @@ bool LcdDisplay::SetVoiceCharacter(int shape, int colour) {
 void LcdDisplay::SetStatus(const char* status) {
     DisplayLockGuard lock(this);
     const bool mic_muted = Application::GetInstance().GetAudioService().IsMicrophoneMuted();
+    if (strcmp(status, Lang::Strings::ERROR) == 0) error_held_ = true;
+    if (strcmp(status, Lang::Strings::CONNECTING) == 0) error_held_ = false;
     if (!voice_tool_active_ || strcmp(status, Lang::Strings::SPEAKING) == 0 ||
         strcmp(status, Lang::Strings::STANDBY) == 0 ||
         strcmp(status, Lang::Strings::ERROR) == 0) {
         const auto caption = CaptionForDeviceState(Application::GetInstance().GetDeviceState(), mic_muted);
-        UpdateVoiceStateCaption(caption.text, caption.color);
+        if (error_held_) UpdateVoiceStateCaption("TAP TO RETRY", kVoiceRed);
+        else UpdateVoiceStateCaption(caption.text, caption.color);
     }
     // When muted we must not say "Listening" on the pill, but an active tool
     // caption still owns the pill — don't overwrite it.
@@ -1488,7 +1494,7 @@ void LcdDisplay::RenderVoiceOrb(float seconds) {
         auto mood = MascotPlayer::Mood::Asleep;
         if (voice_orb_connecting_) mood = MascotPlayer::Mood::Connecting;
         else if (voice_orb_color_ == kVoiceErrorColor) mood = MascotPlayer::Mood::Error;
-        else if (mascot_error_at_ != 0 && lv_tick_elaps(mascot_error_at_) < kMascotErrorMs)
+        else if (error_held_ || (mascot_error_at_ != 0 && lv_tick_elaps(mascot_error_at_) < kMascotErrorMs))
             mood = MascotPlayer::Mood::Error;
         else if (in_call && mascot_busy_)
             mood = mascot_tool_ ? MascotPlayer::Mood::Working : MascotPlayer::Mood::Thinking;

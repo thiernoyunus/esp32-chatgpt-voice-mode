@@ -187,6 +187,9 @@ private:
     int idle_seconds_ = 0;              // Seconds since the last sign of life
     std::atomic<bool> is_screen_asleep_{false};
     std::atomic<bool> call_end_requested_{false};
+    // Set once a failed call has been retried by itself; cleared when a call
+    // connects or the failure is shown.
+    std::atomic<bool> retried_call_{false};
     int screen_sleep_seconds_ = 60;
     std::string pending_watch_notification_;
     int last_channel_attempt_ticks_ = -1000;  // Rate-limits idle channel reopening

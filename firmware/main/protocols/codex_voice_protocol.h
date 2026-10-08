@@ -17,6 +17,10 @@
 
 class WebSocket;
 
+// Whether a failed call is the kind a fresh try usually fixes: the line to the
+// Mac or to ChatGPT broke, as opposed to the Mac being asleep or signed out.
+bool IsRetryableCallFailure(const std::string& message);
+
 class CodexVoiceProtocol : public Protocol {
 public:
     struct ModelChoice { std::string id; std::string name; };

@@ -62,7 +62,18 @@ export class DesktopCodexProcess extends EventEmitter {
         socket.on('error', (error) => { this.stderr.write(`${error.message}\n`); socket.destroy(); });
         socket.on('close', () => { this.stdout.end(); this.emit('exit', this.killed ? 0 : 1); });
         socket.write(`${JSON.stringify(startSchema.parse({ cwd, overrides }))}\n`);
-        this.stdin.pipe(socket).pipe(this.stdout);
+        // Send nothing until the host says it has handed over: until then
+        // the host could still read it.
+        let head = Buffer.alloc(0);
+        const awaitReady = (chunk: Buffer) => {
+          head = Buffer.concat([head, chunk]);
+          const newline = head.indexOf(10);
+          if (newline < 0) return;
+          socket.off('data', awaitReady);
+          if (head.length > newline + 1) this.stdout.write(head.subarray(newline + 1));
+          this.stdin.pipe(socket).pipe(this.stdout);
+        };
+        socket.on('data', awaitReady);
       });
     };
     // Give the caller time to attach its error and exit handlers.
@@ -138,33 +149,30 @@ export async function startDesktopCoreHost(executable: string, directory = deskt
       clearTimeout(timeout);
       try {
         const { cwd, overrides } = startSchema.parse(JSON.parse(buffer.subarray(0, newline).toString()));
+        // The client waits for "ready" before sending more.
+        if (buffer.length > newline + 1) { socket.destroy(); return; }
+        socket.pause();
+        /* The call's Codex is given the connection itself, in its own process
+         * group: Codex desktop runs a copy of this host per chat and stops it
+         * when that chat closes - often mid-call, since a call opens its own
+         * chat - and calls borrowed through the host died with it. Needs node:
+         * Bun cannot hand a socket to a child. */
         const child = spawn(executable, ['app-server', '--listen', 'stdio://', ...overrides,
           '-c', `mcp_servers.${DESKTOP_CORE_HOST_NAME}.enabled=false`,
           '-c', 'plugins.codex-app-tools@openai-bundled.mcp_servers.codex_app.enabled=true'],
-        { cwd, stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env,
+        { cwd, stdio: [socket, socket, 'inherit'], detached: true, env: { ...process.env,
           CODEX_MCP_NODE_PATH: process.execPath, CODEX_BROWSER_USE_NODE_PATH: process.execPath } });
         child.on('error', () => socket.destroy());
-        child.stdin.on('error', () => socket.destroy());
-        child.stdout.on('error', () => socket.destroy());
-        child.on('exit', () => socket.end());
-        child.stderr.on('data', (data) => process.stderr.write(data));
-        child.stdout.pipe(socket);
-        socket.pipe(child.stdin);
-        if (buffer.length > newline + 1) child.stdin.write(buffer.subarray(newline + 1));
-        socket.on('close', () => child.kill());
+        child.unref();
+        socket.write('ready\n', () => socket.destroy());
       } catch { socket.destroy(); }
     };
     socket.on('data', readStart);
   });
   await new Promise<void>((resolveListen, reject) => { server.once('error', reject); server.listen(path, resolveListen); });
   chmodSync(path, 0o600);
-  return { path, clients, close() {
+  return { path, close() {
     for (const socket of clients) socket.destroy();
-    this.drain();
-  }, drain() {
-    // Codex desktop runs a copy of this host per chat and stops it when that
-    // chat closes - often mid-call, since a call opens its own chat. Take no
-    // new calls, but let running ones finish; the process exits after them.
     server.close();
     rmSync(path, { force: true });
   } };
@@ -179,13 +187,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const host = await startDesktopCoreHost(executable);
   const mcp = new Server({ name: DESKTOP_CORE_HOST_NAME, version: '1.0.0' }, { capabilities: { tools: {} } });
   mcp.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [] }));
-  const close = () => {
-    host.drain();
-    void mcp.close();
-    const exitWhenIdle = () => { if (host.clients.size === 0) process.exit(0); };
-    exitWhenIdle();
-    for (const socket of host.clients) socket.on('close', exitWhenIdle);
-  };
+  const close = () => { host.close(); void mcp.close(); };
   process.stdin.once('end', close);
   process.stdin.once('close', close);
   process.once('SIGTERM', close);
