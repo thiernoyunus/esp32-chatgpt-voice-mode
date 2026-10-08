@@ -92,7 +92,7 @@ const CODEX_DEVELOPER_INSTRUCTION_LIST = [
 // Without it, the model answers a project question with "you have no
 // projects" or invents a reason, when the tools simply are not in this call.
 const NO_DESKTOP_APP_INSTRUCTION =
-  'The Codex app is not open on this Mac, so this call has no Codex app tools: no projects, chats or tasks. If the person asks for any of those, tell them that is the reason, and that opening the Codex app on the Mac and calling again will bring them back. Do not say they have no projects.';
+  'This call has no Codex app tools: no projects, chats or tasks. That usually means the Codex app is not open on this Mac. If the person asks for any of those, say you cannot reach their Codex projects right now, that this usually means the Codex app is not open on the Mac, and that opening it and calling again should bring them back. Do not say they have no projects.';
 
 export function buildCodexDeveloperInstructions(desktopHost: boolean): string {
   return [...CODEX_DEVELOPER_INSTRUCTION_LIST, ...(desktopHost ? [] : [NO_DESKTOP_APP_INSTRUCTION])]

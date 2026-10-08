@@ -324,6 +324,6 @@ describe('a second offer from the desk device', () => {
 });
 
 it('a call without the Codex app says why projects are missing', () => {
-  expect(buildCodexDeveloperInstructions(false)).toContain('The Codex app is not open');
-  expect(buildCodexDeveloperInstructions(true)).not.toContain('The Codex app is not open');
+  expect(buildCodexDeveloperInstructions(false)).toContain('This call has no Codex app tools');
+  expect(buildCodexDeveloperInstructions(true)).not.toContain('This call has no Codex app tools');
 });
