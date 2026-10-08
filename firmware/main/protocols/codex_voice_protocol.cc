@@ -168,8 +168,8 @@ CodexVoiceProtocol::~CodexVoiceProtocol() {
 
 bool IsRetryableCallFailure(const std::string& message) {
     // The Mac's messages arrive as its own text (src/failures.ts).
-    for (const char* broken : {"The Mac disconnected", "Lost the Codex connection",
-                               "Voice connection dropped", "ChatGPT Voice could not connect",
+    for (const char* broken : {"Your Mac stopped answering", "Lost the connection to Codex",
+                               "The voice call dropped", "ChatGPT Voice could not connect",
                                Lang::Strings::VOICEMODE_CONTROL_DROPPED}) {
         if (message.find(broken) != std::string::npos) return true;
     }
@@ -190,13 +190,37 @@ bool CodexVoiceProtocol::ReconnectControlChannel() {
 }
 
 bool CodexVoiceProtocol::OpenControlChannel(bool quiet) {
-    std::lock_guard<std::recursive_mutex> lock(websocket_mutex_);
-    if (websocket_ != nullptr && websocket_->IsConnected()) {
-        control_connected_ = true;
-        return true;
+    /* Connecting can hang (the TLS connect in the websocket driver has no
+     * timeout, and it can only be bounded from outside). So the connection is
+     * built on a local object WITHOUT holding websocket_mutex_, which only
+     * guards the quick swap below. Otherwise a background reconnect stuck here
+     * would block the main task the moment the user starts a call. Only one
+     * connect runs at a time; a call that finds one running waits a bounded
+     * time for it, then gives up with "can't find your Mac". */
+    {
+        std::lock_guard<std::recursive_mutex> lock(websocket_mutex_);
+        if (websocket_ != nullptr && websocket_->IsConnected()) {
+            control_connected_ = true;
+            return true;
+        }
+        control_connected_ = false;
+        websocket_.reset();
     }
-    control_connected_ = false;
-    websocket_.reset();
+    if (connecting_.exchange(true)) {
+        if (!quiet) {
+            for (int i = 0; i < kConnectWaitMs / 100 && connecting_.load(); i++) {
+                vTaskDelay(pdMS_TO_TICKS(100));
+            }
+            if (control_connected_) return true;
+            ESP_LOGE(TAG, "Another control channel connect is still stuck");
+            SetError(Lang::Strings::VOICEMODE_MAC_UNREACHABLE);
+        }
+        return false;
+    }
+    struct Done {
+        std::atomic<bool>& flag;
+        ~Done() { flag = false; }
+    } done{connecting_};
 
     Settings settings("voicemode", false);
     const std::string base_url = settings.GetString("url", CONFIG_VOICEMODE_URL);
@@ -212,32 +236,33 @@ bool CodexVoiceProtocol::OpenControlChannel(bool quiet) {
         device_id = SystemInfo::GetMacAddress();
     }
 
-    websocket_ = Board::GetInstance().GetNetwork()->CreateWebSocket(1);
-    if (websocket_ == nullptr) {
+    std::unique_ptr<WebSocket> ws = Board::GetInstance().GetNetwork()->CreateWebSocket(1);
+    if (ws == nullptr) {
         ESP_LOGE(TAG, "Could not create control channel");
 
         if (!quiet) SetError(Lang::Strings::VOICEMODE_MAC_UNREACHABLE);
         return false;
     }
-    websocket_->OnData([this](const char* data, size_t size, bool binary) {
+    ws->OnData([this](const char* data, size_t size, bool binary) {
         if (!binary) {
             HandleSignal(data, size);
         }
         last_incoming_time_ = std::chrono::steady_clock::now();
         last_control_data_ms_.store(NowMilliseconds());
     });
-    websocket_->OnDisconnected([this]() {
+    ws->OnDisconnected([this]() {
         control_connected_ = false;
         channel_open_ = false;
         if (!closing_) {
-            Fail("The Mac disconnected.");
+            Fail("Your Mac stopped answering. Tap to try again.");
         }
     });
-    if (!websocket_->Connect(BuildConnectionUrl(base_url, device_id, token).c_str())) {
+    // The driver gives up on the handshake after 10 s (managed_components
+    // 78__esp-ml307 web_socket.cc), but not on the TLS connect before it.
+    if (!ws->Connect(BuildConnectionUrl(base_url, device_id, token).c_str())) {
         // The driver hides HTTP status; refusal cannot be identified as bad credentials.
         ESP_LOGE(TAG, "Could not connect to control channel");
         if (!quiet) SetError(Lang::Strings::VOICEMODE_MAC_UNREACHABLE);
-        websocket_.reset();
         return false;
     }
 
@@ -246,20 +271,23 @@ bool CodexVoiceProtocol::OpenControlChannel(bool quiet) {
     cJSON_AddStringToObject(hello, "deviceId", device_id.c_str());
     cJSON_AddNumberToObject(hello, "ts", NowMilliseconds());
     char* hello_json = cJSON_PrintUnformatted(hello);
-    const bool hello_sent = hello_json != nullptr && SendText(hello_json);
+    const bool hello_sent = hello_json != nullptr && ws->IsConnected() && ws->Send(hello_json);
     cJSON_free(hello_json);
     cJSON_Delete(hello);
     if (!hello_sent) {
         // A successful connection does not guarantee the first send succeeds.
         ESP_LOGE(TAG, "Could not identify control channel");
         if (!quiet) SetError(Lang::Strings::VOICEMODE_CONTROL_DROPPED);
-        websocket_.reset();
         return false;
     }
+    {
+        std::lock_guard<std::recursive_mutex> lock(websocket_mutex_);
+        websocket_ = std::move(ws);
+        last_control_data_ms_.store(NowMilliseconds());
+        control_connected_ = websocket_->IsConnected();
+    }
     ESP_LOGI(TAG, "control channel ready");
-    last_control_data_ms_.store(NowMilliseconds());
-    control_connected_ = true;
-    return true;
+    return control_connected_;
 }
 
 bool CodexVoiceProtocol::SendText(const std::string& text) {

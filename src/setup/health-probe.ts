@@ -34,16 +34,16 @@ export const EXPECTED_SCHEMA_VERSION = 1;
  * copied from the reply, which may hold a private path, a token, or a sentence.
  */
 const SAFE_FAILURE_MESSAGE: Record<string, string> = {
-  usage_limit: 'ChatGPT usage limit reached. Voice returns when it resets.',
-  catalog_unavailable: 'Cannot load voice choices. Check Codex on your Mac and retry.',
-  model_unavailable: 'This voice model is unavailable. Choose another in Settings.',
-  permission_denied: 'Codex cannot open its chat folder. Run bun run doctor on your Mac.',
-  sign_in_required: 'Check your Codex sign-in on the Mac, then retry.',
-  setup_timeout: 'Voice setup took too long. Check Codex on your Mac and retry.',
-  codex_missing: 'Cannot start Codex. Run bun run doctor on your Mac.',
-  codex_disconnected: 'Lost the Codex connection. Check your Mac and retry.',
-  voice_connection_lost: 'Voice connection dropped. Tap to reconnect.',
-  voice_failed: 'Voice could not start. Run bun run doctor on your Mac.',
+  usage_limit: 'You\'ve used up your ChatGPT voice time for now. It returns when the limit resets.',
+  catalog_unavailable: 'Can\'t load the voice list. Make sure Codex is open on your Mac, then tap to try again.',
+  model_unavailable: 'That voice isn\'t available. Pick another one in Settings.',
+  permission_denied: 'Codex can\'t open its chat folder on your Mac. Run bun run doctor there.',
+  sign_in_required: 'Codex isn\'t signed in on your Mac. Open the Codex app and sign in.',
+  setup_timeout: 'Your Mac took too long to answer. Tap to try again.',
+  codex_missing: 'Codex can\'t start on your Mac. Run bun run doctor there.',
+  codex_disconnected: 'Lost the connection to Codex on your Mac. Tap to try again.',
+  voice_connection_lost: 'The voice call dropped. Tap to try again.',
+  voice_failed: 'Voice couldn\'t start. Tap to try again, or run bun run doctor on your Mac.',
 };
 
 const GENERIC_FAILURE_CODE = 'voice_failed';

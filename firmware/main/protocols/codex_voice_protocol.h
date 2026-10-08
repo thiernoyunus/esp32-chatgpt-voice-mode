@@ -71,6 +71,8 @@ private:
     std::unique_ptr<WebSocket> websocket_;
     mutable std::recursive_mutex websocket_mutex_;
     std::atomic<bool> control_connected_{false};
+    std::atomic<bool> connecting_{false};
+    static constexpr int kConnectWaitMs = 12000;  // a little over the driver's 10 s handshake limit
     esp_peer_handle_t peer_ = nullptr;
     EventGroupHandle_t peer_events_ = nullptr;
     std::atomic<bool> peer_running_{false};

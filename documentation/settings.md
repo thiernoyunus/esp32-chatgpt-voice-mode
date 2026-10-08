@@ -89,7 +89,7 @@ curl -s http://127.0.0.1:8790/health
 - `calls.active` counts calls in progress.
 - `lastError` is either `null` or a short, fixed object with a `code` and a
   `message`, for example
-  `{"code":"sign_in_required","message":"Check your Codex sign-in on the Mac, then retry."}`.
+  `{"code":"sign_in_required","message":"Codex isn't signed in on your Mac. Open the Codex app and sign in."}`.
   Raw errors are deliberately not returned, because they can contain private
   paths or the shared secret.
 
