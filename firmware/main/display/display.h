@@ -63,6 +63,8 @@ public:
     virtual void ShowVoicePage() {}
     // A call failed for good: keep its message up until the next call.
     virtual void HoldCallError() {}
+    // The held failure is no longer true (the Mac is back): back to normal.
+    virtual void ReleaseCallError() {}
     virtual bool SnapshotToJpeg(std::string& jpeg_data, int quality = 80) {
         (void)jpeg_data;
         (void)quality;

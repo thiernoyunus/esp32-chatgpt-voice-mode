@@ -242,6 +242,9 @@ bool CodexVoiceProtocol::ConnectControlChannel() {
     // Another connect may have finished between the caller's check and here.
     if (ControlChannelUp()) return true;
     connect_error_ = Lang::Strings::VOICEMODE_MAC_UNREACHABLE;
+    // handshake_refused_ describes the last finished attempt (the Status page
+    // reads it); this attempt's answer is only published once it is known.
+    auto refused = std::make_shared<std::atomic<bool>>(false);
 
     Settings settings("voicemode", false);
     const std::string base_url = settings.GetString("url", CONFIG_VOICEMODE_URL);
@@ -276,11 +279,17 @@ bool CodexVoiceProtocol::ConnectControlChannel() {
             Fail(Lang::Strings::VOICEMODE_CONTROL_DROPPED);
         }
     });
+    // Called only when the server answered the upgrade with a refusal: the
+    // Mac (or Tailscale in front of it) was reached, the voice program was not.
+    ws->OnError([refused](int) { *refused = true; });
     if (!ws->Connect(BuildConnectionUrl(base_url, device_id, token).c_str())) {
         // The driver hides HTTP status; refusal cannot be identified as bad credentials.
         ESP_LOGE(TAG, "Could not connect to control channel");
+        handshake_refused_ = refused->load();
+        if (handshake_refused_) connect_error_ = Lang::Strings::VOICEMODE_MAC_NOT_ANSWERING;
         return false;
     }
+    handshake_refused_ = false;
 
     cJSON* hello = cJSON_CreateObject();
     cJSON_AddStringToObject(hello, "type", "hello");
@@ -302,8 +311,19 @@ bool CodexVoiceProtocol::ConnectControlChannel() {
         last_control_data_ms_.store(NowMilliseconds());
         control_connected_ = websocket_->IsConnected();
     }
+    connect_count_++;
     ESP_LOGI(TAG, "control channel ready");
     return control_connected_;
+}
+
+CodexVoiceProtocol::MacState CodexVoiceProtocol::GetMacState() const {
+    if (control_connected_) return MacState::Connected;
+    if (connect_count_ == 0 && connecting_) return MacState::Unknown;
+    return handshake_refused_ ? MacState::NotAnswering : MacState::NotFound;
+}
+
+bool CodexVoiceProtocol::RequestStatus() {
+    return SendText("{\"type\":\"status_request\"}");
 }
 
 bool CodexVoiceProtocol::SendText(const std::string& text) {
@@ -606,6 +626,12 @@ void CodexVoiceProtocol::HandleSignal(const char* data, size_t size) {
         if (cJSON_IsObject(cJSON_GetObjectItemCaseSensitive(root, "payload")) && on_incoming_json_) {
             on_incoming_json_(root);
         }
+        cJSON_Delete(root);
+        return;
+    }
+    if (cJSON_IsString(type) && strcmp(type->valuestring, "status") == 0) {
+        const cJSON* codex_app = cJSON_GetObjectItemCaseSensitive(root, "codexApp");
+        if (cJSON_IsBool(codex_app)) codex_app_ = cJSON_IsTrue(codex_app) ? 1 : 0;
         cJSON_Delete(root);
         return;
     }

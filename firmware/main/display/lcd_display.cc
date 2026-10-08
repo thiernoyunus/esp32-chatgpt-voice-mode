@@ -1821,6 +1821,14 @@ void LcdDisplay::HoldCallError() {
     error_held_ = true;
     UpdateVoiceStateCaption("TAP TO RETRY", kVoiceRed);
 }
+void LcdDisplay::ReleaseCallError() {
+    DisplayLockGuard lock(this);
+    if (!error_held_) return;
+    error_held_ = false;
+    ClearChatMessages();
+    const auto caption = CaptionForDeviceState(Application::GetInstance().GetDeviceState(), false);
+    UpdateVoiceStateCaption(caption.text, caption.color);
+}
 void LcdDisplay::ShowVoicePage() {
     DisplayLockGuard lock(this);
     if (watch_ui_) watch_ui_->Show(WatchUi::Page::Voice);

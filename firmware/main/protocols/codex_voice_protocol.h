@@ -37,6 +37,16 @@ public:
 
     bool Start() override;
     bool IsControlConnected() const { return control_connected_.load(); }
+    // For the Status page. How the last connect to the Mac went: whether the
+    // Mac could be reached at all, or was reached but its voice program would
+    // not take the connection (Tailscale answered, the listener did not).
+    enum class MacState { Unknown, Connected, NotFound, NotAnswering };
+    MacState GetMacState() const;
+    // Successful connects so far; a held call error clears once this grows.
+    uint32_t ConnectCount() const { return connect_count_.load(); }
+    // Whether calls can reach the Codex app's project tools: -1 not known yet.
+    int CodexAppOpen() const { return codex_app_.load(); }
+    bool RequestStatus();
     bool ReconnectControlChannel();
     void SendMcpMessage(const std::string& payload) override;
     bool OpenAudioChannel() override;
@@ -72,6 +82,9 @@ private:
     mutable std::recursive_mutex websocket_mutex_;
     std::atomic<bool> control_connected_{false};
     std::atomic<bool> connecting_{false};
+    std::atomic<bool> handshake_refused_{false};
+    std::atomic<uint32_t> connect_count_{0};
+    std::atomic<int> codex_app_{-1};
     // Why the last connect failed, shown when a call gives up waiting for it.
     std::atomic<const char*> connect_error_{nullptr};
     static constexpr int kConnectWaitMs = 12000;  // a little over the driver's 10 s handshake limit
