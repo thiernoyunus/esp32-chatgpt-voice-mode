@@ -196,6 +196,7 @@ private:
     std::string pending_watch_notification_;
     int last_channel_attempt_ticks_ = -1000;  // Rate-limits idle channel reopening
     int channel_down_since_ticks_ = -1;  // When the line to the Mac went down; -1 while up
+    int channel_ticks_ = 0;  // Seconds since boot, for the two above
     std::atomic<bool> channel_reconnect_running_{false};
     int clock_ticks_ = 0;
     int last_telemetry_ticks_ = 0;

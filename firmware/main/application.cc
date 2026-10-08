@@ -392,6 +392,7 @@ void Application::Run() {
             }
 
 #ifdef CONFIG_VOICEMODE_PROTOCOL
+            channel_ticks_++;  // never reset, unlike clock_ticks_ (state changes)
             if (GetDeviceState() == kDeviceStateIdle) {
                 idle_seconds_++;
                 if (screen_sleep_seconds_ > 0 && idle_seconds_ >= screen_sleep_seconds_) {
@@ -406,13 +407,13 @@ void Application::Run() {
                     Board::GetInstance().GetDisplay()->ReleaseCallError();
                 }
                 if (voice != nullptr && voice->IsControlConnected()) channel_down_since_ticks_ = -1;
-                else if (channel_down_since_ticks_ < 0) channel_down_since_ticks_ = clock_ticks_;
+                else if (channel_down_since_ticks_ < 0) channel_down_since_ticks_ = channel_ticks_;
                 if (voice != nullptr && !voice->IsControlConnected() && !is_screen_asleep_ &&
                     Board::GetInstance().IsWifiConnected() &&
-                    clock_ticks_ - last_channel_attempt_ticks_ >=
-                        ChannelReopenIntervalSeconds(clock_ticks_ - channel_down_since_ticks_) &&
+                    channel_ticks_ - last_channel_attempt_ticks_ >=
+                        ChannelReopenIntervalSeconds(channel_ticks_ - channel_down_since_ticks_) &&
                     !channel_reconnect_running_.exchange(true)) {
-                    last_channel_attempt_ticks_ = clock_ticks_;
+                    last_channel_attempt_ticks_ = channel_ticks_;
                     if (xTaskCreate([](void* arg) {
                             auto* app = static_cast<Application*>(arg);
                             auto* protocol = static_cast<CodexVoiceProtocol*>(app->protocol_.get());

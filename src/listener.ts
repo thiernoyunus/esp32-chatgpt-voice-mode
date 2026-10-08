@@ -627,7 +627,7 @@ export async function runListener(
           return;
         }
         if (plan.kind === 'status_request') {
-          void desktopHostAnswers().then(codexApp => {
+          void desktopHostAnswers().catch(() => false).then(codexApp => {
             sendToDevice(socket, encodeServerToDeviceMessage({ type: 'status', codexApp }));
           });
           return;

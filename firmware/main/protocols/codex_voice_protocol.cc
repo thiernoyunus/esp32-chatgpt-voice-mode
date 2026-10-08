@@ -274,6 +274,7 @@ bool CodexVoiceProtocol::ConnectControlChannel() {
     });
     ws->OnDisconnected([this]() {
         control_connected_ = false;
+        codex_app_ = -1;  // the Mac's last answer may no longer hold
         channel_open_ = false;
         if (!closing_) {
             Fail(Lang::Strings::VOICEMODE_CONTROL_DROPPED);
@@ -313,6 +314,7 @@ bool CodexVoiceProtocol::ConnectControlChannel() {
     }
     connect_count_++;
     ESP_LOGI(TAG, "control channel ready");
+    RequestStatus();  // so Status knows about the Codex app without being opened
     return control_connected_;
 }
 

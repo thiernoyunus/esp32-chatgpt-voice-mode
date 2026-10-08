@@ -515,7 +515,7 @@ void WatchUi::Show(Page page) {
         Header("ChatGPT",Page::Voice);Column();
         {
             const auto problem=FirstProblem(info_);
-            Row("Status",problem.summary?problem.summary:(info_.mac==1?"All good":"Checking"),
+            Row("Status",problem.summary?problem.summary:(info_.mac==1&&info_.codex_app==1?"All good":"Checking"),
                 [this]{Show(Page::Status);Emit(Action::CheckStatus);});
         }
         if(info_.mascot>=0) Row("Mascot",mascot::kMascots[info_.mascot].name,[this]{Show(Page::Mascots);});

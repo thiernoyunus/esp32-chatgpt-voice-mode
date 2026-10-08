@@ -89,6 +89,7 @@ struct CodexVoiceProtocol {
     std::string request_id_ = "current", chat_list_request_id_ = "picker", error;
     /* Written by the parser when a reply is expected; read by the watchdog. */
     std::atomic<uint32_t> last_audio_frame_ms_{0}, speech_expected_since_ms_{0};
+    std::atomic<int> codex_app_{-1};  // the Mac's answer to a status request
     std::string transcript_partial_, transcript_role_;
     /* Where the parser hands a finished line of speech; kept so a test can see
      * the text the device would have captioned. */
