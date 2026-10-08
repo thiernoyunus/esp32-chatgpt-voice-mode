@@ -61,6 +61,8 @@ public:
     virtual void HideVoiceModels() {}
     virtual void FeedTouch(bool pressed, int x, int y) { (void)pressed; (void)x; (void)y; }
     virtual void ShowVoicePage() {}
+    // A call failed for good: keep its message up until the next call.
+    virtual void HoldCallError() {}
     virtual bool SnapshotToJpeg(std::string& jpeg_data, int quality = 80) {
         (void)jpeg_data;
         (void)quality;

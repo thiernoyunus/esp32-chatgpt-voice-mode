@@ -286,6 +286,7 @@ void Application::Run() {
                 retried_call_ = false;  // the next tap gets its own retry
                 Alert(Lang::Strings::ERROR, last_error_message_.c_str(), "cancel",
                       Lang::Sounds::OGG_EXCLAMATION);
+                Board::GetInstance().GetDisplay()->HoldCallError();
             }
         }
 

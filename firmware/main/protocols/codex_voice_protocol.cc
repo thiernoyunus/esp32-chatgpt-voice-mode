@@ -51,7 +51,7 @@ constexpr size_t kMinimumVoiceAudioBytes = 10;
 constexpr int kMaxStallRetries = 3;
 // ponytail: fixed guess at how long a quiet line can be trusted; lower it if
 // calls still vanish after shorter idles.
-constexpr auto kControlQuietLimit = std::chrono::minutes(5);
+constexpr uint32_t kControlQuietLimitMs = 5 * 60 * 1000;
 
 // Preserve saved credential bytes, including '+' in older base64 tokens.
 std::string PercentEncode(const std::string& value) {
@@ -224,6 +224,7 @@ bool CodexVoiceProtocol::OpenControlChannel(bool quiet) {
             HandleSignal(data, size);
         }
         last_incoming_time_ = std::chrono::steady_clock::now();
+        last_control_data_ms_.store(NowMilliseconds());
     });
     websocket_->OnDisconnected([this]() {
         control_connected_ = false;
@@ -256,7 +257,7 @@ bool CodexVoiceProtocol::OpenControlChannel(bool quiet) {
         return false;
     }
     ESP_LOGI(TAG, "control channel ready");
-    last_incoming_time_ = std::chrono::steady_clock::now();
+    last_control_data_ms_.store(NowMilliseconds());
     control_connected_ = true;
     return true;
 }
@@ -296,10 +297,10 @@ bool CodexVoiceProtocol::OpenAudioChannel() {
          * a few seconds over a hotspot. No keep-alive traffic - the battery
          * pays for that all day. */
         std::lock_guard<std::recursive_mutex> lock(websocket_mutex_);
-        const auto quiet = std::chrono::steady_clock::now() - last_incoming_time_;
-        if (websocket_ != nullptr && quiet > kControlQuietLimit) {
-            ESP_LOGI(TAG, "Control channel quiet for %lld s; reconnecting before the call",
-                     static_cast<long long>(std::chrono::duration_cast<std::chrono::seconds>(quiet).count()));
+        const uint32_t quiet_ms = NowMilliseconds() - last_control_data_ms_.load();
+        if (websocket_ != nullptr && quiet_ms > kControlQuietLimitMs) {
+            ESP_LOGI(TAG, "Control channel quiet for %lu s; reconnecting before the call",
+                     static_cast<unsigned long>(quiet_ms / 1000));
             websocket_.reset();
             control_connected_ = false;
         }
