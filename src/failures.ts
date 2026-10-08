@@ -8,7 +8,7 @@ export function classifyVoiceFailure(message: string): { code: string; message: 
     return { code: 'reasoning_unverified', message: 'Can\'t check the reasoning level. Check your Codex model, then tap to try again.' };
   }
   if (/\b429\b|too many requests|rate.?limit|usage limit/i.test(message)) {
-    return { code: 'usage_limit', message: 'You\'ve used up your ChatGPT voice time for now. It returns when the limit resets.' };
+    return { code: 'usage_limit', message: 'ChatGPT is limiting voice use right now. Try again in a little while.' };
   }
   if (/voice model catalog unavailable/i.test(message)) {
     return { code: 'catalog_unavailable', message: 'Can\'t load the voice list. Make sure Codex is open on your Mac, then tap to try again.' };

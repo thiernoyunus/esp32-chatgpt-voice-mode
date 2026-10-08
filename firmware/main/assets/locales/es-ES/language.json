@@ -26,7 +26,7 @@
         "SERVER_NOT_FOUND": "Buscando servicio disponible",
         "SERVER_NOT_CONNECTED": "No se puede conectar al servicio, inténtelo más tarde",
         "VOICEMODE_URL_NOT_SET": "Falta la dirección del Mac. Ejecuta la configuración en tu Mac.",
-        "VOICEMODE_MAC_UNREACHABLE": "No encuentro tu Mac. Comprueba que esté encendido, sin suspender, y que la app Tailscale esté activada.",
+        "VOICEMODE_MAC_UNREACHABLE": "No se encuentra tu Mac. Comprueba que está encendido, sin suspender y conectado (con Tailscale activado, si lo usas).",
         "VOICEMODE_CONTROL_DROPPED": "Tu Mac dejó de responder. Toca para intentarlo de nuevo.",
         "SERVER_TIMEOUT": "Tiempo de espera agotado",
         "SERVER_ERROR": "Error de envío, verifique la red",

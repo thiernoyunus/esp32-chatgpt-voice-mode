@@ -34,7 +34,7 @@ export const EXPECTED_SCHEMA_VERSION = 1;
  * copied from the reply, which may hold a private path, a token, or a sentence.
  */
 const SAFE_FAILURE_MESSAGE: Record<string, string> = {
-  usage_limit: 'You\'ve used up your ChatGPT voice time for now. It returns when the limit resets.',
+  usage_limit: 'ChatGPT is limiting voice use right now. Try again in a little while.',
   catalog_unavailable: 'Can\'t load the voice list. Make sure Codex is open on your Mac, then tap to try again.',
   model_unavailable: 'That voice isn\'t available. Pick another one in Settings.',
   permission_denied: 'Codex can\'t open its chat folder on your Mac. Run bun run doctor there.',

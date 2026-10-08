@@ -72,6 +72,8 @@ private:
     mutable std::recursive_mutex websocket_mutex_;
     std::atomic<bool> control_connected_{false};
     std::atomic<bool> connecting_{false};
+    // Why the last connect failed, shown when a call gives up waiting for it.
+    std::atomic<const char*> connect_error_{nullptr};
     static constexpr int kConnectWaitMs = 12000;  // a little over the driver's 10 s handshake limit
     esp_peer_handle_t peer_ = nullptr;
     EventGroupHandle_t peer_events_ = nullptr;
@@ -85,6 +87,8 @@ private:
     VoiceReadiness readiness_;
 
     bool OpenControlChannel(bool quiet = false);
+    bool ControlChannelUp();
+    bool ConnectControlChannel();
     bool SendText(const std::string& text) override;
     bool SendSignalOffer(const uint8_t* data, size_t size);
     void HandleSignal(const char* data, size_t size);

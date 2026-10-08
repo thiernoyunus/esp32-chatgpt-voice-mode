@@ -160,6 +160,8 @@ const char* ReadErrorMessage(const cJSON* root) {
 CodexVoiceProtocol::CodexVoiceProtocol() { peer_events_ = xEventGroupCreate(); }
 
 CodexVoiceProtocol::~CodexVoiceProtocol() {
+    // A connect in flight still uses this object; let it finish first.
+    while (connecting_) vTaskDelay(pdMS_TO_TICKS(100));
     CloseAudioChannel(false);
     if (peer_events_ != nullptr) {
         vEventGroupDelete(peer_events_);
@@ -168,7 +170,7 @@ CodexVoiceProtocol::~CodexVoiceProtocol() {
 
 bool IsRetryableCallFailure(const std::string& message) {
     // The Mac's messages arrive as its own text (src/failures.ts).
-    for (const char* broken : {"Your Mac stopped answering", "Lost the connection to Codex",
+    for (const char* broken : {"Lost the connection to Codex",
                                "The voice call dropped", "ChatGPT Voice could not connect",
                                Lang::Strings::VOICEMODE_CONTROL_DROPPED}) {
         if (message.find(broken) != std::string::npos) return true;
@@ -191,36 +193,55 @@ bool CodexVoiceProtocol::ReconnectControlChannel() {
 
 bool CodexVoiceProtocol::OpenControlChannel(bool quiet) {
     /* Connecting has been seen to hang for minutes inside the websocket
-     * driver (Funnel up, listener down), which we cannot change. So the connection is
-     * built on a local object WITHOUT holding websocket_mutex_, which only
-     * guards the quick swap below. Otherwise a background reconnect stuck here
-     * would block the main task the moment the user starts a call. Only one
-     * connect runs at a time; a call that finds one running waits a bounded
-     * time for it, then gives up with "can't find your Mac". */
-    {
-        std::lock_guard<std::recursive_mutex> lock(websocket_mutex_);
-        if (websocket_ != nullptr && websocket_->IsConnected()) {
-            control_connected_ = true;
-            return true;
-        }
-        control_connected_ = false;
-        websocket_.reset();
+     * driver (Funnel up, listener down), which we cannot change. So the
+     * connect never runs on the caller's task when the caller is a person
+     * starting a call: it runs on its own task, and the call waits a bounded
+     * time for it, then gives up with "can't find your Mac". The connection is
+     * built on a local object; websocket_mutex_ only guards the quick swap at
+     * the end. Only one connect runs at a time (connecting_). */
+    if (ControlChannelUp()) return true;
+    if (quiet) {
+        // Already on a background task (the idle reconnect).
+        return !connecting_.exchange(true) && ConnectControlChannel();
     }
-    if (connecting_.exchange(true)) {
-        if (!quiet) {
-            for (int i = 0; i < kConnectWaitMs / 100 && connecting_.load(); i++) {
-                vTaskDelay(pdMS_TO_TICKS(100));
-            }
-            if (control_connected_) return true;
-            ESP_LOGE(TAG, "Another control channel connect is still stuck");
-            SetError(Lang::Strings::VOICEMODE_MAC_UNREACHABLE);
+    if (!connecting_.exchange(true)) {
+        if (xTaskCreate([](void* self) {
+                static_cast<CodexVoiceProtocol*>(self)->ConnectControlChannel();
+                vTaskDelete(nullptr);
+            }, "control_connect", 8192, this, 2, nullptr) != pdPASS) {
+            connecting_ = false;
         }
-        return false;
     }
+    for (int i = 0; i < kConnectWaitMs / 100 && connecting_.load(); i++) {
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+    if (ControlChannelUp()) return true;
+    if (connecting_) ESP_LOGE(TAG, "Control channel connect is still stuck");
+    const char* reason = connect_error_.load();
+    SetError(reason != nullptr ? reason : Lang::Strings::VOICEMODE_MAC_UNREACHABLE);
+    return false;
+}
+
+bool CodexVoiceProtocol::ControlChannelUp() {
+    std::lock_guard<std::recursive_mutex> lock(websocket_mutex_);
+    if (websocket_ != nullptr && websocket_->IsConnected()) {
+        control_connected_ = true;
+        return true;
+    }
+    control_connected_ = false;
+    websocket_.reset();
+    return false;
+}
+
+// Runs holding connecting_ (set by the caller) and releases it when done.
+bool CodexVoiceProtocol::ConnectControlChannel() {
     struct Done {
         std::atomic<bool>& flag;
         ~Done() { flag = false; }
     } done{connecting_};
+    // Another connect may have finished between the caller's check and here.
+    if (ControlChannelUp()) return true;
+    connect_error_ = Lang::Strings::VOICEMODE_MAC_UNREACHABLE;
 
     Settings settings("voicemode", false);
     const std::string base_url = settings.GetString("url", CONFIG_VOICEMODE_URL);
@@ -229,7 +250,7 @@ bool CodexVoiceProtocol::OpenControlChannel(bool quiet) {
     if (base_url.empty()) {
 
         ESP_LOGE(TAG, "Voice mode URL is not configured");
-        if (!quiet) SetError(Lang::Strings::VOICEMODE_URL_NOT_SET);
+        connect_error_ = Lang::Strings::VOICEMODE_URL_NOT_SET;
         return false;
     }
     if (device_id.empty()) {
@@ -239,8 +260,6 @@ bool CodexVoiceProtocol::OpenControlChannel(bool quiet) {
     std::unique_ptr<WebSocket> ws = Board::GetInstance().GetNetwork()->CreateWebSocket(1);
     if (ws == nullptr) {
         ESP_LOGE(TAG, "Could not create control channel");
-
-        if (!quiet) SetError(Lang::Strings::VOICEMODE_MAC_UNREACHABLE);
         return false;
     }
     ws->OnData([this](const char* data, size_t size, bool binary) {
@@ -254,13 +273,12 @@ bool CodexVoiceProtocol::OpenControlChannel(bool quiet) {
         control_connected_ = false;
         channel_open_ = false;
         if (!closing_) {
-            Fail("Your Mac stopped answering. Tap to try again.");
+            Fail(Lang::Strings::VOICEMODE_CONTROL_DROPPED);
         }
     });
     if (!ws->Connect(BuildConnectionUrl(base_url, device_id, token).c_str())) {
         // The driver hides HTTP status; refusal cannot be identified as bad credentials.
         ESP_LOGE(TAG, "Could not connect to control channel");
-        if (!quiet) SetError(Lang::Strings::VOICEMODE_MAC_UNREACHABLE);
         return false;
     }
 
@@ -275,7 +293,7 @@ bool CodexVoiceProtocol::OpenControlChannel(bool quiet) {
     if (!hello_sent) {
         // A successful connection does not guarantee the first send succeeds.
         ESP_LOGE(TAG, "Could not identify control channel");
-        if (!quiet) SetError(Lang::Strings::VOICEMODE_CONTROL_DROPPED);
+        connect_error_ = Lang::Strings::VOICEMODE_CONTROL_DROPPED;
         return false;
     }
     {
