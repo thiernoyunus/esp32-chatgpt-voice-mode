@@ -190,8 +190,8 @@ bool CodexVoiceProtocol::ReconnectControlChannel() {
 }
 
 bool CodexVoiceProtocol::OpenControlChannel(bool quiet) {
-    /* Connecting can hang (the TLS connect in the websocket driver has no
-     * timeout, and it can only be bounded from outside). So the connection is
+    /* Connecting has been seen to hang for minutes inside the websocket
+     * driver (Funnel up, listener down), which we cannot change. So the connection is
      * built on a local object WITHOUT holding websocket_mutex_, which only
      * guards the quick swap below. Otherwise a background reconnect stuck here
      * would block the main task the moment the user starts a call. Only one
@@ -257,8 +257,6 @@ bool CodexVoiceProtocol::OpenControlChannel(bool quiet) {
             Fail("Your Mac stopped answering. Tap to try again.");
         }
     });
-    // The driver gives up on the handshake after 10 s (managed_components
-    // 78__esp-ml307 web_socket.cc), but not on the TLS connect before it.
     if (!ws->Connect(BuildConnectionUrl(base_url, device_id, token).c_str())) {
         // The driver hides HTTP status; refusal cannot be identified as bad credentials.
         ESP_LOGE(TAG, "Could not connect to control channel");
