@@ -77,6 +77,10 @@ protected:
     bool mascot_busy_ = false;
     // When FlashMascotError() last fired; 0 when it has not.
     uint32_t mascot_error_at_ = 0;
+    // A call failed and the watch gave up (HoldCallError): its message, the
+    // red face and "TAP TO RETRY" stay until the next call starts, instead of
+    // being wiped by the return to standby a moment later.
+    bool error_held_ = false;
     // Where the working cycle is. Held as plain integers so this header does
     // not have to pull in bloub_states.h, whose profile tables are inline.
     // The values are bloub_state_id_t; the cycle order is in lcd_display.cc.
@@ -136,6 +140,7 @@ public:
     void HideVoiceModels() override;
     void FeedTouch(bool pressed, int x, int y) override;
     void ShowVoicePage() override;
+    void HoldCallError() override;
     void UpdateWatchInfo(const WatchUi::Info& info);
     void UpdateStatusBar(bool update_all = false) override;
     void ShowConfirmScreen(const char* summary) override;

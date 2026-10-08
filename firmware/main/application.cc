@@ -253,6 +253,15 @@ void Application::Run() {
             if (auto* voice = dynamic_cast<CodexVoiceProtocol*>(protocol_.get())) {
                 reopen = voice->TakeStallRecovery() && !call_end_requested_.load();
             }
+            // A line that broke usually works the second time, on a fresh
+            // connection; ask the person only if that fails too. Failures a
+            // retry cannot fix (Mac asleep, signed out, too slow) go straight
+            // to the message.
+            if (!reopen && !call_end_requested_.load() && !retried_call_.exchange(true) &&
+                IsRetryableCallFailure(last_error_message_)) {
+                ESP_LOGW(TAG, "Call failed (%s); retrying once", last_error_message_.c_str());
+                reopen = true;
+            }
             if (protocol_) {
                 protocol_->CloseAudioChannel();
             }
@@ -274,8 +283,10 @@ void Application::Run() {
                     }
                 });
             } else {
+                retried_call_ = false;  // the next tap gets its own retry
                 Alert(Lang::Strings::ERROR, last_error_message_.c_str(), "cancel",
                       Lang::Sounds::OGG_EXCLAMATION);
+                Board::GetInstance().GetDisplay()->HoldCallError();
             }
         }
 
@@ -779,7 +790,10 @@ void Application::InitializeProtocol() {
     // dialect is the only one the device speaks.
     protocol_ = std::make_unique<CodexVoiceProtocol>();
 
-    protocol_->OnConnected([this]() { DismissAlert(); });
+    protocol_->OnConnected([this]() {
+        retried_call_ = false;
+        DismissAlert();
+    });
 
     protocol_->OnNetworkError([this](const std::string& message) {
         last_error_message_ = message;

@@ -49,6 +49,9 @@ constexpr size_t kMinimumVoiceAudioBytes = 10;
 /* Consecutive silent calls to rebuild before handing it back to the user. Each
  * attempt costs kInboundAudioStallMs, so this is seconds, not minutes. */
 constexpr int kMaxStallRetries = 3;
+// ponytail: fixed guess at how long a quiet line can be trusted; lower it if
+// calls still vanish after shorter idles.
+constexpr uint32_t kControlQuietLimitMs = 5 * 60 * 1000;
 
 // Preserve saved credential bytes, including '+' in older base64 tokens.
 std::string PercentEncode(const std::string& value) {
@@ -163,6 +166,16 @@ CodexVoiceProtocol::~CodexVoiceProtocol() {
     }
 }
 
+bool IsRetryableCallFailure(const std::string& message) {
+    // The Mac's messages arrive as its own text (src/failures.ts).
+    for (const char* broken : {"The Mac disconnected", "Lost the Codex connection",
+                               "Voice connection dropped", "ChatGPT Voice could not connect",
+                               Lang::Strings::VOICEMODE_CONTROL_DROPPED}) {
+        if (message.find(broken) != std::string::npos) return true;
+    }
+    return false;
+}
+
 bool CodexVoiceProtocol::Start() {
     // Keep the MCP control path available while idle. WebRTC is opened only
     // when the user starts a voice call.
@@ -211,6 +224,7 @@ bool CodexVoiceProtocol::OpenControlChannel(bool quiet) {
             HandleSignal(data, size);
         }
         last_incoming_time_ = std::chrono::steady_clock::now();
+        last_control_data_ms_.store(NowMilliseconds());
     });
     websocket_->OnDisconnected([this]() {
         control_connected_ = false;
@@ -243,6 +257,7 @@ bool CodexVoiceProtocol::OpenControlChannel(bool quiet) {
         return false;
     }
     ESP_LOGI(TAG, "control channel ready");
+    last_control_data_ms_.store(NowMilliseconds());
     control_connected_ = true;
     return true;
 }
@@ -275,6 +290,21 @@ bool CodexVoiceProtocol::OpenAudioChannel() {
         return true;
     }
     CloseAudioChannel(false);
+    {
+        /* A line that has been quiet for minutes may have been cut somewhere
+         * on the way (router, relay) without either end noticing; a call sent
+         * into it vanishes. Start a fresh one instead: under a second at home,
+         * a few seconds over a hotspot. No keep-alive traffic - the battery
+         * pays for that all day. */
+        std::lock_guard<std::recursive_mutex> lock(websocket_mutex_);
+        const uint32_t quiet_ms = NowMilliseconds() - last_control_data_ms_.load();
+        if (websocket_ != nullptr && quiet_ms > kControlQuietLimitMs) {
+            ESP_LOGI(TAG, "Control channel quiet for %lu s; reconnecting before the call",
+                     static_cast<unsigned long>(quiet_ms / 1000));
+            websocket_.reset();
+            control_connected_ = false;
+        }
+    }
 
     error_occurred_ = false;
     closing_ = false;

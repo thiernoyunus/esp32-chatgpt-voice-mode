@@ -26,7 +26,7 @@
         "SERVER_NOT_FOUND": "Buscando servicio disponible",
         "SERVER_NOT_CONNECTED": "No se puede conectar al servicio, inténtelo más tarde",
         "VOICEMODE_URL_NOT_SET": "Falta la dirección del Mac. Ejecuta la configuración en tu Mac.",
-        "VOICEMODE_MAC_UNREACHABLE": "No se pudo contactar con el Mac. Comprueba que está en la misma wifi y que el listener está en marcha.",
+        "VOICEMODE_MAC_UNREACHABLE": "No se pudo contactar con el Mac. Comprueba que está encendido y conectado, y toca para reintentar.",
         "VOICEMODE_CONTROL_DROPPED": "El Mac dejó de responder tras conectar. Revisa el registro del listener e inténtalo de nuevo.",
         "SERVER_TIMEOUT": "Tiempo de espera agotado",
         "SERVER_ERROR": "Error de envío, verifique la red",

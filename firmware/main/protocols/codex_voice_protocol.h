@@ -17,6 +17,10 @@
 
 class WebSocket;
 
+// Whether a failed call is the kind a fresh try usually fixes: the line to the
+// Mac or to ChatGPT broke, as opposed to the Mac being asleep or signed out.
+bool IsRetryableCallFailure(const std::string& message);
+
 class CodexVoiceProtocol : public Protocol {
 public:
     struct ModelChoice { std::string id; std::string name; };
@@ -103,6 +107,9 @@ private:
     // Reset by the first real speech frame, so the budget runs down only while
     // calls keep coming up silent - it is not a lifetime cap.
     std::atomic<bool> stall_recovery_{false};
+    // When the Mac last sent anything; written by the WebSocket task, read
+    // before a call, so atomic.
+    std::atomic<uint32_t> last_control_data_ms_{0};
     std::atomic<int> stall_retries_{0};
     // The reply as it is being written. Touched only from the data-channel
     // callback, which is the one task that parses these messages.
