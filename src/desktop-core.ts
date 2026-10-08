@@ -188,6 +188,12 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const mcp = new Server({ name: DESKTOP_CORE_HOST_NAME, version: '1.0.0' }, { capabilities: { tools: {} } });
   mcp.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [] }));
   const close = () => { host.close(); void mcp.close(); };
+  // Quit to the background, Codex desktop deletes this host's door to its app
+  // tools but may leave the host running; a call borrowed through it gets
+  // project tools that all fail. Stop taking calls once the door is gone, so
+  // calls start Codex themselves and say why there are no projects.
+  const door = process.env.CODEX_APP_TOOLS_PIPE_PATH;
+  setInterval(() => { if (!existsSync(door)) close(); }, 2_000).unref();
   process.stdin.once('end', close);
   process.stdin.once('close', close);
   process.once('SIGTERM', close);

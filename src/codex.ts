@@ -89,8 +89,14 @@ const CODEX_DEVELOPER_INSTRUCTION_LIST = [
  * below to ask rather than guess is what covers that now; to put the place
  * back, add it to this list.
  */
-function buildCodexDeveloperInstructions(): string {
-  return CODEX_DEVELOPER_INSTRUCTION_LIST.join('\n\n');
+// Without it, the model answers a project question with "you have no
+// projects" or invents a reason, when the tools simply are not in this call.
+const NO_DESKTOP_APP_INSTRUCTION =
+  'The Codex app is not open on this Mac, so this call has no Codex app tools: no projects, chats or tasks. If the person asks for any of those, tell them that is the reason, and that opening the Codex app on the Mac and calling again will bring them back. Do not say they have no projects.';
+
+export function buildCodexDeveloperInstructions(desktopHost: boolean): string {
+  return [...CODEX_DEVELOPER_INSTRUCTION_LIST, ...(desktopHost ? [] : [NO_DESKTOP_APP_INSTRUCTION])]
+    .join('\n\n');
 }
 
 const codexMessageSchema = z
@@ -1797,7 +1803,7 @@ export class CodexAppServerClient {
     const config = voiceThreadConfig(modelOverrides, enableRealtime);
     const threadResult = await this.#request('thread/start', {
       cwd: scratchFolder,
-      developerInstructions: buildCodexDeveloperInstructions(),
+      developerInstructions: buildCodexDeveloperInstructions(this.desktopHost),
       ephemeral,
       // Keep the same analytics label as native realtime chats. It does not
       // control the desktop sidebar; the app-server process boundary does.
@@ -2012,7 +2018,7 @@ export class CodexAppServerClient {
     const config = voiceThreadConfig(modelOverrides);
     return this.#request('thread/resume', {
       threadId,
-      developerInstructions: buildCodexDeveloperInstructions(),
+      developerInstructions: buildCodexDeveloperInstructions(this.desktopHost),
       config,
     })
       .then(

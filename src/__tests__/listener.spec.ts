@@ -12,7 +12,7 @@ import {
   isLoopbackAddress,
   planDeviceMessage,
 } from '../listener';
-import { buildRecentChatList, decideThreadReuse, mergeRecentChatLists, resolveVoiceModelSelection } from '../codex';
+import { buildCodexDeveloperInstructions, buildRecentChatList, decideThreadReuse, mergeRecentChatLists, resolveVoiceModelSelection } from '../codex';
 
 it('uses the current Luna model when the device saved the retired Luna model', () => {
   const catalog = [{ model: 'gpt-6-luna', displayName: 'Luna', defaultReasoningEffort: 'low', supportedReasoningEffortList: ['low'] }];
@@ -321,4 +321,9 @@ describe('a second offer from the desk device', () => {
       }),
     ).toBeNull();
   });
+});
+
+it('a call without the Codex app says why projects are missing', () => {
+  expect(buildCodexDeveloperInstructions(false)).toContain('The Codex app is not open');
+  expect(buildCodexDeveloperInstructions(true)).not.toContain('The Codex app is not open');
 });
