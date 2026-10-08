@@ -30,19 +30,26 @@ export class DesktopCodexProcess extends EventEmitter {
   readonly stderr = new PassThrough();
   killed = false;
   #socket: Socket | null = null;
+  #child: ReturnType<typeof spawn> | null = null;
 
-  constructor(cwd: string, overrides: string[], directory = desktopCoreDirectory()) {
+  // `direct`: the path of the Codex executable to start ourselves. Otherwise
+  // connect to the desktop host. (Passed in, not imported: Codex desktop runs
+  // this file with its own node, which cannot resolve extensionless imports.)
+  constructor(cwd: string, overrides: string[], directory = desktopCoreDirectory(),
+    direct?: string) {
     super();
-    const candidates = existsSync(directory) ? readdirSync(directory)
-      .filter((name) => name.endsWith('.sock')).map((name) => join(directory, name))
-      .filter((path) => { try { const stat = lstatSync(path);
-        return stat.isSocket() && stat.uid === process.getuid?.() && (stat.mode & 0o077) === 0;
-      } catch { return false; } }).sort((a, b) => { try { return lstatSync(a).mtimeMs - lstatSync(b).mtimeMs; } catch { return 0; } }) : [];
+    if (direct !== undefined) {
+      // Started by us, as before the desktop host existed (so without the
+      // host's own desktop-only MCP server). Never depends on Codex desktop.
+      queueMicrotask(() => this.#spawnDirect(direct, cwd, overrides));
+      return;
+    }
+    const candidates = desktopHostSockets(directory);
     const connect = () => {
       const path = candidates.pop();
       if (this.killed) return;
       if (!path) {
-        this.stderr.write('Codex desktop host is unavailable. Open Codex on this Mac and start or resume a chat.\n');
+        this.stderr.write('Codex desktop host is unavailable: Codex desktop is not running it.\n');
         this.emit('exit', 1);
         return;
       }
@@ -62,7 +69,48 @@ export class DesktopCodexProcess extends EventEmitter {
     queueMicrotask(connect);
   }
 
-  kill(): void { this.killed = true; this.#socket?.destroy(); this.stdin.destroy(); }
+  #spawnDirect(executable: string, cwd: string, overrides: string[]): void {
+    if (this.killed) return;
+    const child = spawn(executable, ['app-server', '--listen', 'stdio://', ...overrides,
+      '-c', `mcp_servers.${DESKTOP_CORE_HOST_NAME}.enabled=false`],
+      { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
+    child.on('error', (error) => { this.stderr.write(`${error.message}\n`); this.emit('exit', 1); });
+    child.on('exit', (code) => { this.stdout.end(); this.emit('exit', this.killed ? 0 : code ?? 1); });
+    child.stderr.pipe(this.stderr, { end: false });
+    child.stdout.pipe(this.stdout);
+    this.stdin.pipe(child.stdin);
+    this.#child = child;
+  }
+
+  kill(): void { this.killed = true; this.#socket?.destroy(); this.#child?.kill(); this.stdin.destroy(); }
+}
+
+/** The desktop host's private sockets, newest last. */
+function desktopHostSockets(directory: string): string[] {
+  return existsSync(directory) ? readdirSync(directory)
+    .filter((name) => name.endsWith('.sock')).map((name) => join(directory, name))
+    .filter((path) => { try { const stat = lstatSync(path);
+      return stat.isSocket() && stat.uid === process.getuid?.() && (stat.mode & 0o077) === 0;
+    } catch { return false; } }).sort((a, b) => { try { return lstatSync(a).mtimeMs - lstatSync(b).mtimeMs; } catch { return 0; } }) : [];
+}
+
+/**
+ * Whether a desktop host answers right now. Codex desktop runs it while the
+ * app is open and its registered file loads; old sockets outlive it, so a file
+ * alone is not enough.
+ */
+export async function desktopHostAnswers(directory = desktopCoreDirectory(), timeoutMilliseconds = 1_500) {
+  for (const path of desktopHostSockets(directory).reverse()) {
+    const answered = await new Promise<boolean>((resolve) => {
+      const socket = createConnection(path);
+      const done = (ok: boolean) => { clearTimeout(timer); socket.destroy(); resolve(ok); };
+      const timer = setTimeout(() => done(false), timeoutMilliseconds);
+      socket.once('connect', () => done(true));
+      socket.once('error', () => done(false));
+    });
+    if (answered) return true;
+  }
+  return false;
 }
 
 /** Loaded by Codex desktop as an MCP server, so its children inherit app access. */
