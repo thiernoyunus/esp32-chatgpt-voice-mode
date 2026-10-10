@@ -118,6 +118,8 @@ public:
 
     virtual bool IsExternalPowerConnected() { return false; }
     virtual bool GetBatteryLevel(int &level, bool& charging, bool& discharging);
+    // How often the touch screen stopped answering and was reset; -1 if not tracked.
+    virtual int TouchRestarts() { return -1; }
     virtual std::string GetSystemInfoJson();
     virtual void SetPowerSaveLevel(PowerSaveLevel level) = 0;
     virtual std::string GetBoardJson() = 0;

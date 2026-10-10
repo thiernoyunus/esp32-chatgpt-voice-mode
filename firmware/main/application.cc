@@ -1828,6 +1828,7 @@ void Application::RefreshWatchInfo() {
         if (std::find(info.networks.begin(), info.networks.end(), name) == info.networks.end())
             info.networks.push_back(name);
     info.version = esp_app_get_description()->version;
+    info.touch_restarts = board.TouchRestarts();
     if (ota_ != nullptr) {
         info.slot = ota_->GetRunningSlot();
         info.rolled_back = ota_->RolledBack();
