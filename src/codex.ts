@@ -1500,11 +1500,15 @@ export class CodexAppServerClient {
       }
       this.#desktopConversationBridge.invalidate(threadId);
       this.#desktopConversationBridge.publish(threadId);
-    }).catch(() => undefined);
+    }).catch(() => {
+      // No marker turn: a later user message must not be mistaken for it.
+      this.#markerThreadIdSet.delete(threadId);
+    });
   }
 
   /** Stop voice before dropping the subscription so Codex can release the chat. */
   async #releaseThread(threadId: string): Promise<void> {
+    this.#markerThreadIdSet.delete(threadId);
     const startedAt = Date.now();
     if (await releaseVoiceChat((method, params) => this.#request(method, params), threadId)) {
       clearPendingVoiceRequests(this.#serverRequests, threadId);
