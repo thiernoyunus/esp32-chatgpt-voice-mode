@@ -562,7 +562,7 @@ export function voiceThreadSettings(model: string | undefined, effort: string, c
 }
 
 export function voiceChatUnavailable(error: unknown): boolean {
-  return error instanceof Error && /not found|unknown thread|no rollout|does not exist|\bis archived\b/i.test(error.message);
+  return error instanceof Error && /not found|unknown thread|no rollout|does not exist|\bis archived\b|already has an active writer/i.test(error.message);
 }
 
 export function voiceThreadConfig(settings?: { model: string; reasoningEffort: string }, realtime = true): Record<string, unknown> {
@@ -1167,6 +1167,9 @@ export type ActiveRealtimeSession = {
 export class CodexAppServerClient {
   readonly #serverRequests = new Map<string, { id: string | number; method: string; params: DesktopIpcRecord }>();
   readonly #markedCallStartedThreadIdSet = new Set<string>();
+  // Chats whose "Voice call started." marker is waiting to be saved; the reply
+  // to it is stopped then, so Codex never spends time answering it.
+  readonly #markerThreadIdSet = new Set<string>();
   readonly #process: DesktopCodexProcess;
   readonly #readlineInterface: Interface;
   readonly #pendingRequestMap = new Map<number, PendingCodexRequest>();
@@ -1434,26 +1437,6 @@ export class CodexAppServerClient {
           // Nothing about saving the conversation depends on it: every spoken
           // turn is already written when the speaker finishes it.
           flushTranscriptTailOnSessionEnd: false,
-          // Greeting instruction: see README v3 initialItems shape. Needs live
-          // voice validation on a real device — the bridge forwards it but
-          // nothing here can prove the model speaks it without a mic round-trip.
-          //
-          // Asking for the greeting at session open makes the assistant's very
-          // first response the one that is most likely to arrive as captions
-          // with no voice, and a silent first response trips the device's stall
-          // check before the user has asked anything. Setting
-          // VOICEMODE_GREETING=0 leaves the greeting out, which is how to
-          // tell a greeting-only fault apart from a session that never carries
-          // voice at all.
-          initialItems:
-            process.env.VOICEMODE_GREETING === '0'
-              ? undefined
-              : [
-                  {
-                    role: 'developer',
-                    text: 'When this voice call opens, greet the user once, briefly: "Salaam, what are we tackling today?" Then listen. Do not invent a user question or start tools for the greeting.',
-                  },
-                ],
         }),
         answerPromise,
       ]);
@@ -1506,6 +1489,7 @@ export class CodexAppServerClient {
   }
 
   #markCallStarted(session: ActiveRealtimeSession, threadId: string): void {
+    this.#markerThreadIdSet.add(threadId);
     void this.#request('turn/start', {
       threadId,
       input: [{ type: 'text', text: 'Voice call started.' }],
@@ -1516,11 +1500,15 @@ export class CodexAppServerClient {
       }
       this.#desktopConversationBridge.invalidate(threadId);
       this.#desktopConversationBridge.publish(threadId);
-    }).catch(() => undefined);
+    }).catch(() => {
+      // No marker turn: a later user message must not be mistaken for it.
+      this.#markerThreadIdSet.delete(threadId);
+    });
   }
 
   /** Stop voice before dropping the subscription so Codex can release the chat. */
   async #releaseThread(threadId: string): Promise<void> {
+    this.#markerThreadIdSet.delete(threadId);
     const startedAt = Date.now();
     if (await releaseVoiceChat((method, params) => this.#request(method, params), threadId)) {
       clearPendingVoiceRequests(this.#serverRequests, threadId);
@@ -1603,6 +1591,18 @@ export class CodexAppServerClient {
   }
 
   #handleNotification(method: string, params: unknown): void {
+    // The marker only exists so the chat is listed in Codex. Once it is saved,
+    // stop the reply: answering it took up to 30 s and slowed voice setup.
+    // (Stopping any earlier fails with "no active turn to interrupt".)
+    if (method === 'item/completed' && this.#markerThreadIdSet.size > 0) {
+      const record = desktopIpcRecord(params);
+      const threadId = desktopIpcString(record?.threadId);
+      const turnId = desktopIpcString(record?.turnId);
+      const itemType = desktopIpcString(desktopIpcRecord(record?.item)?.type);
+      if (threadId && turnId && itemType === 'userMessage' && this.#markerThreadIdSet.delete(threadId)) {
+        void this.#request('turn/interrupt', { threadId, turnId }).catch(() => undefined);
+      }
+    }
     if (method === 'serverRequest/resolved') {
       const resolved = desktopIpcRecord(params);
       this.#serverRequests.delete(String(resolved?.requestId));
