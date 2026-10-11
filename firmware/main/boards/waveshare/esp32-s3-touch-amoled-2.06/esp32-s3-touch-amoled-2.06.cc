@@ -355,8 +355,10 @@ private:
         int last_y = 0;
         while (true) {
             // An interrupt wakes this task for a new touch. The slow check is
-            // a fallback in case the controller misses an interrupt.
-            if (!was_pressed && Application::GetInstance().IsScreenAsleep()) {
+            // a fallback in case the controller misses an interrupt. Skipped
+            // while recovering, so resets stay ~10 s apart.
+            if (!was_pressed && read_failures < kTouchFailuresBeforeReset &&
+                Application::GetInstance().IsScreenAsleep()) {
                 ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(touch_interrupt_ready_ ? 1000 : 250));
             }
             const auto err = esp_lcd_touch_read_data(touch_handle_);
