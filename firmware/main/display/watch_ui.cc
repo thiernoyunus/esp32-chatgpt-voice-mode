@@ -509,6 +509,7 @@ void WatchUi::Show(Page page) {
         Row("Voice","WebRTC",{});
         std::string battery=info_.battery<0?"Not available":std::to_string(info_.battery)+"%"+(info_.charging?" - charging":"");
         Row("Battery",battery.c_str(),{});
+        if(info_.touch_restarts>=0) Row("Touch restarts",std::to_string(info_.touch_restarts).c_str(),{});
         Row("Display",large_text_?"410x502":"360x360",{});break;
     }
     case Page::CodexSettings:
