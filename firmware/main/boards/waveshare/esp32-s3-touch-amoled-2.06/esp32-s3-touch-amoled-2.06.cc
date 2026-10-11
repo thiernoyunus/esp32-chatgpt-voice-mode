@@ -200,7 +200,10 @@ private:
     TaskHandle_t touch_task_handle_ = nullptr;
     std::atomic<bool> touch_interrupt_ready_{false};
     std::atomic<int> touch_restarts_{0};
-    static constexpr int kTouchFailuresBeforeReset = 25;  // ~0.5 s of failed reads
+    // ~3 s of failed reads. The driver puts the chip into a low-power monitor
+    // mode after 2 s without a touch, and it misses reads there (one about every
+    // 13.6 s, sometimes ~0.5 s in a row); 0.5 s counted those naps as failures.
+    static constexpr int kTouchFailuresBeforeReset = 150;
 
     void InitializeCodecI2c() {
         i2c_master_bus_config_t i2c_bus_cfg = {
@@ -356,8 +359,8 @@ private:
         while (true) {
             // An interrupt wakes this task for a new touch. The slow check is
             // a fallback in case the controller misses an interrupt. Skipped
-            // while recovering, so resets stay ~10 s apart.
-            if (!was_pressed && read_failures < kTouchFailuresBeforeReset &&
+            // once a read fails, so the ~3 s and ~10 s timings below hold.
+            if (!was_pressed && read_failures == 0 &&
                 Application::GetInstance().IsScreenAsleep()) {
                 ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(touch_interrupt_ready_ ? 1000 : 250));
             }
