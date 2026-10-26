@@ -199,6 +199,11 @@ private:
     esp_lcd_touch_handle_t touch_handle_ = nullptr;
     TaskHandle_t touch_task_handle_ = nullptr;
     std::atomic<bool> touch_interrupt_ready_{false};
+    std::atomic<int> touch_restarts_{0};
+    // ~3 s of failed reads. The driver puts the chip into a low-power monitor
+    // mode after 2 s without a touch, and it misses reads there (one about every
+    // 13.6 s, sometimes ~0.5 s in a row); 0.5 s counted those naps as failures.
+    static constexpr int kTouchFailuresBeforeReset = 150;
 
     void InitializeCodecI2c() {
         i2c_master_bus_config_t i2c_bus_cfg = {
@@ -349,39 +354,43 @@ private:
         bool was_pressed = false;
         bool swallow_touch = false;
         int read_failures = 0;
-        bool wake_retried = false;
         int last_x = 0;
         int last_y = 0;
         while (true) {
             // An interrupt wakes this task for a new touch. The slow check is
-            // a fallback in case the controller misses an interrupt.
-            if (!was_pressed && Application::GetInstance().IsScreenAsleep()) {
+            // a fallback in case the controller misses an interrupt. Skipped
+            // once a read fails, so the ~3 s and ~10 s timings below hold.
+            if (!was_pressed && read_failures == 0 &&
+                Application::GetInstance().IsScreenAsleep()) {
                 ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(touch_interrupt_ready_ ? 1000 : 250));
             }
             const auto err = esp_lcd_touch_read_data(touch_handle_);
             if (err != ESP_OK) {
-                if (++read_failures >= 25) {
-                    // FT5x06 does not implement the generic exit-sleep call.
-                    // Pulse its configured reset pin once before giving up.
-                    if (!wake_retried && gpio_set_level(GPIO_NUM_9, 0) == ESP_OK) {
-                        vTaskDelay(pdMS_TO_TICKS(10));
-                        gpio_set_level(GPIO_NUM_9, 1);
-                        wake_retried = true;
-                        read_failures = 0;
-                        vTaskDelay(pdMS_TO_TICKS(10));
-                        continue;
-                    }
-                    Application::GetInstance().OnWatchAction(WatchUi::Action::EndCall, 0, "", "");
-                    display_->FeedTouch(false, last_x, last_y);
-                    ESP_LOGE(TAG, "Touch controller stopped responding");
-                    vTaskDelete(nullptr);
-                    return;
+                if (++read_failures < kTouchFailuresBeforeReset) {
+                    vTaskDelay(pdMS_TO_TICKS(20));
+                    continue;
                 }
-                vTaskDelay(pdMS_TO_TICKS(20));
+                /* The chip can take longer than that to answer, most likely
+                 * after the watch has napped unplugged. This used to give up
+                 * for good, leaving taps dead until a restart. Now: release any
+                 * press, reset the chip (FT5x06 has no exit-sleep call), and
+                 * keep trying slowly, resetting again every ~10 s it stays
+                 * silent. Touch restarts are counted for Settings > About. */
+                if (read_failures == kTouchFailuresBeforeReset) {
+                    ESP_LOGW(TAG, "Touch controller not responding; resetting it");
+                    touch_restarts_++;
+                    if (was_pressed) display_->FeedTouch(false, last_x, last_y);
+                    was_pressed = false;
+                    gpio_set_level(GPIO_NUM_9, 0);
+                    vTaskDelay(pdMS_TO_TICKS(10));
+                    gpio_set_level(GPIO_NUM_9, 1);
+                }
+                vTaskDelay(pdMS_TO_TICKS(500));
+                if (read_failures >= kTouchFailuresBeforeReset + 20) read_failures = kTouchFailuresBeforeReset - 1;
                 continue;
             }
+            if (read_failures >= kTouchFailuresBeforeReset) ESP_LOGI(TAG, "Touch controller answering again");
             read_failures = 0;
-            wake_retried = false;
             uint16_t x = 0, y = 0;
             uint8_t point_count = 0;
             const bool pressed =
@@ -408,6 +417,7 @@ private:
     }
 
 public:
+    int TouchRestarts() override { return touch_restarts_.load(); }
     WaveshareEsp32s3TouchAMOLED2inch06() : boot_button_(BOOT_BUTTON_GPIO) {
         InitializeCodecI2c();
         InitializeAxp2101();

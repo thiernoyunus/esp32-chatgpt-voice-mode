@@ -44,6 +44,8 @@ public:
         // 3 found but its voice program is not answering. codex_app: whether
         // calls can reach the Codex app's projects; -1 not known yet.
         int mac = 0, codex_app = -1;
+        // Times the touch screen stopped answering and was reset since boot; -1 if not tracked.
+        int touch_restarts = -1;
         std::vector<std::string> networks, saved_networks, models, chats, chat_folders;
     };
     using Callback = std::function<void(Action, int, const std::string&, const std::string&)>;

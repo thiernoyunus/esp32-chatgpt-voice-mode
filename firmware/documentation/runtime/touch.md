@@ -27,7 +27,7 @@ Leaving the keyboard this way does not submit its unfinished text.
 
 - Any sign of the user — touch, wake word, a turn starting — calls `Application::NoteUserActivity()`, which wakes the screen and restarts the inactivity countdown. After 60 s idle the backlight goes dark and the display enters power-save mode (that is the part that costs CPU).
 - A `confirm_request` replaces the face with a full-screen prompt: the summary plus Sí/No touch buttons (`main/display/confirm_geometry.h` holds the layout, shared with the hit-test so they cannot drift). While it is up, the touch task routes releases only to those two zones; taps outside them do nothing. Voice stays available through the boot button and the wake word.
-- If the touch controller remains unresponsive after the retry, the task asks the main application to close any active voice call before it stops. This keeps a failed input device from leaving a call running without its screen controls.
+- If the touch controller stops answering for ~3 s (150 failed reads in a row; shorter gaps are the chip's own low-power naps), the task releases any press, pulses its reset pin, and keeps retrying every 500 ms, resetting again about every 10 s while it stays silent. It never stops and never ends the call; Settings > About shows the reset count since boot ("Touch restarts").
 - The screen dismisses on: a button press, local expiry (from `expiresAt`, clamped; falls back to 30 s if the clock is unsynced), a server `confirm_close`, any `ui_state` whose state is not `confirm`, or the channel closing.
 
 ## Navigation
