@@ -1,3 +1,18 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/header/grid.svg?title=Codex+Voice&subtitle=An+ESP32+watch+you+talk+to&logo=espressif&mode=dark" />
+    <img alt="Codex Voice" src="https://shieldcn.dev/header/grid.svg?title=Codex+Voice&subtitle=An+ESP32+watch+you+talk+to&logo=espressif&mode=light" />
+  </picture>
+</p>
+
+<p align="center">
+  <a href="SETUP.md"><img alt="Setup guide" src="https://shieldcn.dev/badge/Setup-Guide-2563eb.svg?variant=secondary" /></a>
+  <img alt="ESP32-S3" src="https://shieldcn.dev/badge/ESP32--S3-Firmware-e7352c.svg?variant=secondary&logo=espressif" />
+  <a href="https://github.com/thiernoyunus/esp32-chatgpt-voice-mode/actions/workflows/check.yml"><img alt="CI status" src="https://shieldcn.dev/github/ci/thiernoyunus/esp32-chatgpt-voice-mode.svg?variant=secondary&workflow=check.yml" /></a>
+  <a href="LICENSE"><img alt="License" src="https://shieldcn.dev/github/license/thiernoyunus/esp32-chatgpt-voice-mode.svg?variant=secondary" /></a>
+  <a href="https://github.com/thiernoyunus/esp32-chatgpt-voice-mode"><img alt="Last commit" src="https://shieldcn.dev/github/last-commit/thiernoyunus/esp32-chatgpt-voice-mode.svg?variant=secondary" /></a>
+</p>
+
 # Codex Voice
 
 A small ESP32 watch that you talk to. It connects to a computer on your wifi,
