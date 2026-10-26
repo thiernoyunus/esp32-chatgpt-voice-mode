@@ -1,4 +1,8 @@
 <p align="center">
+  <img src=".github/assets/logo.png" width="112" alt="Codex Voice logo" />
+</p>
+
+<p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/header/grid.svg?title=Codex+Voice&subtitle=An+ESP32+watch+you+talk+to&logo=espressif&mode=dark" />
     <img alt="Codex Voice" src="https://shieldcn.dev/header/grid.svg?title=Codex+Voice&subtitle=An+ESP32+watch+you+talk+to&logo=espressif&mode=light" />
