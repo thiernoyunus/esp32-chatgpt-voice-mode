@@ -8,6 +8,7 @@ test('new and resumed calls keep reasoning independent of the model, with device
   try {
     delete process.env.VOICEMODE_CODEX_REASONING_EFFORT;
     expect(voiceChatUnavailable(new Error('session 123 is archived.'))).toBe(true);
+    expect(voiceChatUnavailable(new Error('thread 01a1 already has an active writer'))).toBe(true);
     expect(voiceChatUnavailable(new Error('no rollout found for thread id 123'))).toBe(true);
     expect(voiceChatUnavailable(new Error('Model first does not support reasoning ultra'))).toBe(false);
     expect(buildCodexOverrides().some(value => value.includes('model_reasoning_effort'))).toBe(false);
